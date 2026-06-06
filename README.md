@@ -110,6 +110,7 @@ The main control class implementing MapLibre's `IControl` interface.
 | `panelWidth`  | `number`  | `360`         | Width of the dropdown panel in pixels                                     |
 | `className`   | `string`  | `''`          | Custom CSS class name                                                     |
 | `interleaved` | `boolean` | `true`        | Render the deck.gl overlay interleaved with the basemap layers            |
+| `defaultUrl`  | `string`  | `''`          | Prefills the Add data URL input (not loaded until the user clicks Load)  |
 
 #### Raster Methods
 

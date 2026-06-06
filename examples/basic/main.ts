@@ -3,9 +3,9 @@ import { RasterControl } from '../../src/index';
 import '../../src/index.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-// A public Cloud Optimized GeoTIFF used as the demo layer.
-const DEMO_COG =
-  'https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/18/T/WL/2026/1/S2B_18TWL_20260101_0_L2A/TCI.tif';
+// A public Cloud Optimized GeoTIFF prefilled in the Add data input
+// (not loaded until the user clicks Load).
+const DEMO_COG = 'https://data.source.coop/opengeos/geoai/naip-test.tif';
 
 // Create map
 const map = new maplibregl.Map({
@@ -26,6 +26,7 @@ map.on('load', () => {
   // Set collapsed: true to start with just the 29x29 button
   const rasterControl = new RasterControl({
     collapsed: false,
+    defaultUrl: DEMO_COG,
   });
 
   // Add control to the map
@@ -47,11 +48,4 @@ map.on('load', () => {
   rasterControl.on('error', (event) => {
     console.error('Raster error:', event.error);
   });
-
-  // Load a demo COG. You can also paste any COG URL or drop a local
-  // GeoTIFF file in the panel.
-  rasterControl
-    .addRaster(DEMO_COG, { name: 'Sentinel-2 True Color (New York)' })
-    .then((id) => console.log('Demo raster loaded:', id))
-    .catch((err) => console.error('Demo raster failed to load:', err));
 });

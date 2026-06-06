@@ -115,6 +115,13 @@ export interface RasterControlOptions {
    * @default true
    */
   interleaved?: boolean;
+
+  /**
+   * Prefills the "Add data" URL input with this COG URL. The raster is NOT
+   * loaded automatically — the user still clicks Load.
+   * @default ''
+   */
+  defaultUrl?: string;
 }
 
 /**

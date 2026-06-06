@@ -1,6 +1,8 @@
 import { el } from './dom';
 
 export type AddDataSectionOptions = {
+  /** Prefills the URL input (not loaded until the user clicks Load). */
+  initialUrl?: string;
   /** Called with a remote COG URL. */
   onAddUrl: (url: string) => void;
   /** Called with a locally selected or dropped GeoTIFF file. */
@@ -29,13 +31,14 @@ export class AddDataSection {
       className: 'mlr-input',
       type: 'text',
       placeholder: 'https://…/cog.tif',
+      value: options.initialUrl ?? '',
       ariaLabel: 'raster-url',
     });
     const loadBtn = el('button', {
       className: 'mlr-button',
       type: 'button',
       text: 'Load',
-      disabled: true,
+      disabled: input.value.trim().length === 0,
       ariaLabel: 'load-url',
     });
     input.addEventListener('input', () => {

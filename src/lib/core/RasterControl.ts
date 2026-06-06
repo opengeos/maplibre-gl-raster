@@ -22,6 +22,7 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   panelWidth: 360,
   className: '',
   interleaved: true,
+  defaultUrl: '',
 };
 
 /**
@@ -101,7 +102,9 @@ export class RasterControl implements IControl {
       '.plugin-control-content',
     );
     if (content) {
-      this._panelUI = new PanelUI(content, this._layerManager);
+      this._panelUI = new PanelUI(content, this._layerManager, {
+        defaultUrl: this._options.defaultUrl,
+      });
     }
 
     // Flush addRaster calls made before the control was added to a map.

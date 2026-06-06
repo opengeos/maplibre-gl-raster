@@ -21,11 +21,17 @@ export class PanelUI {
    *
    * @param container - The panel's content element
    * @param manager - The layer manager to drive
+   * @param options - UI options (e.g. a URL to prefill the Add data input)
    */
-  constructor(container: HTMLElement, manager: LayerManager) {
+  constructor(
+    container: HTMLElement,
+    manager: LayerManager,
+    options?: { defaultUrl?: string },
+  ) {
     this._manager = manager;
 
     const addData = new AddDataSection({
+      initialUrl: options?.defaultUrl,
       onAddUrl: (url) => {
         // Errors surface via the manager's 'error' event and the layer row.
         void this._manager.addRaster(url).catch(() => {});

@@ -1,17 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import maplibregl, { Map } from 'maplibre-gl';
-import {
-  RasterControlReact,
-  useRasterState,
-  type RasterControl,
-} from '../../src/react';
+import { RasterControlReact, useRasterState } from '../../src/react';
 import '../../src/index.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-// A public Cloud Optimized GeoTIFF used as the demo layer.
-const DEMO_COG =
-  'https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/18/T/WL/2026/1/S2B_18TWL_20260101_0_L2A/TCI.tif';
+// A public Cloud Optimized GeoTIFF prefilled in the Add data input
+// (not loaded until the user clicks Load).
+const DEMO_COG = 'https://data.source.coop/opengeos/geoai/naip-test.tif';
 
 /**
  * Main App component demonstrating the React integration
@@ -54,15 +50,6 @@ function App() {
     setState(newState);
   };
 
-  // Load a demo COG once the control is on the map. Users can add more
-  // rasters via the panel (URL or local file).
-  const handleReady = (control: RasterControl) => {
-    control
-      .addRaster(DEMO_COG, { name: 'Sentinel-2 True Color (New York)' })
-      .then((id) => console.log('Demo raster loaded:', id))
-      .catch((err) => console.error('Demo raster failed to load:', err));
-  };
-
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
@@ -93,8 +80,8 @@ function App() {
           map={map}
           collapsed={state.collapsed}
           panelWidth={360}
+          defaultUrl={DEMO_COG}
           onStateChange={handleStateChange}
-          onReady={handleReady}
         />
       )}
     </div>
