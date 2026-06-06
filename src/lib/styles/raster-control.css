@@ -59,7 +59,7 @@
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
   min-width: 240px;
   max-width: 420px;
-  max-height: 500px;
+  max-height: min(80vh, 720px);
   overflow-y: auto;
   z-index: 1000;
   padding: 8px;
@@ -112,7 +112,7 @@
 
 /* Content */
 .plugin-control-content {
-  max-height: 400px;
+  max-height: min(72vh, 660px);
   overflow-y: auto;
 }
 
@@ -219,4 +219,355 @@
   height: 1px;
   background: #e0e0e0;
   margin: 12px 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Raster panel UI (.mlr-*)                                            */
+/* ------------------------------------------------------------------ */
+
+.mlr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: #333;
+}
+
+.mlr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mlr-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #777;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mlr-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mlr-row > .mlr-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.mlr-row > .mlr-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.mlr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.mlr-field:last-child {
+  margin-bottom: 0;
+}
+
+.mlr-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #555;
+}
+
+.mlr-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.mlr-input:focus {
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.15);
+}
+
+.mlr-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 6px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  outline: none;
+}
+
+.mlr-select:focus {
+  border-color: #4a90d9;
+}
+
+.mlr-button {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  background: #4a90d9;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  flex-shrink: 0;
+}
+
+.mlr-button:hover {
+  background: #3a7bc8;
+}
+
+.mlr-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+/* Add data */
+.mlr-drop-zone {
+  border: 1.5px dashed #c4c9d0;
+  border-radius: 4px;
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
+  background: #f7f8f9;
+  color: #888;
+  font-size: 11px;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+
+.mlr-drop-zone:hover,
+.mlr-drop-zone.dragover {
+  border-color: #4a90d9;
+  background: rgba(74, 144, 217, 0.06);
+  color: #4a90d9;
+}
+
+/* Layer list */
+.mlr-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mlr-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-radius: 4px;
+}
+
+.mlr-layer-row:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.mlr-layer-row.selected {
+  background: rgba(74, 144, 217, 0.12);
+}
+
+.mlr-layer-row.errored .mlr-layer-name {
+  color: #c0392b;
+}
+
+.mlr-layer-row input[type='checkbox'] {
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.mlr-layer-name {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+  padding: 2px 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mlr-layer-row.selected .mlr-layer-name {
+  font-weight: 600;
+}
+
+.mlr-icon-button {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: #888;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 3px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
+}
+
+.mlr-icon-button:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.mlr-icon-button:disabled {
+  color: #ccc;
+  cursor: default;
+  background: transparent;
+}
+
+.mlr-empty {
+  color: #999;
+  font-size: 11px;
+  text-align: center;
+  padding: 6px 0;
+}
+
+.mlr-error {
+  color: #c0392b;
+  font-size: 11px;
+  padding: 4px 0;
+  word-break: break-word;
+}
+
+/* Settings */
+.mlr-band-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.mlr-rescale {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mlr-rescale-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mlr-preset-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mlr-preset-button {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.mlr-preset-button:hover {
+  border-color: #4a90d9;
+}
+
+.mlr-preset-button.active {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  color: #fff;
+}
+
+.mlr-slider {
+  width: 100%;
+  margin: 0;
+  accent-color: #4a90d9;
+}
+
+/* Histogram */
+.mlr-histogram {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mlr-histogram-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.mlr-histogram-wrap {
+  position: relative;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.mlr-histogram-wrap.dragging {
+  cursor: grabbing;
+}
+
+.mlr-histogram-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  width: 100%;
+}
+
+.mlr-histogram-bg {
+  fill: #f1f3f5;
+}
+
+.mlr-histogram-handle {
+  position: absolute;
+  top: 50%;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid currentColor;
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  box-sizing: border-box;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Colormap picker */
+.mlr-colormap-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mlr-colormap-preview {
+  border-radius: 2px;
+  image-rendering: auto;
 }
