@@ -42,7 +42,11 @@ export class PanelUI {
     });
 
     this._layerList = new LayerList({
-      onSelect: (id) => this._manager.select(id),
+      // Clicking a layer selects it for editing and brings it into view.
+      onSelect: (id) => {
+        this._manager.select(id);
+        this._manager.zoomTo(id);
+      },
       onToggleVisible: (id, visible) => this._manager.setVisible(id, visible),
       onZoomTo: (id) => this._manager.zoomTo(id),
       onMove: (id, direction) => {
