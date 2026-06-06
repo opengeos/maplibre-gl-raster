@@ -38,6 +38,7 @@ function makeHarness(opts?: {
     addControl: vi.fn(),
     removeControl: vi.fn(),
     fitBounds: vi.fn(),
+    getLayer: vi.fn((id: string) => (id === 'existing-layer' ? {} : undefined)),
   } as unknown as MapLibreMap;
 
   const deps: Partial<LayerManagerDeps> = {
@@ -104,6 +105,19 @@ describe('LayerManager.addRaster', () => {
       state: { mode: 'rgb', bands: [4, 3, 2] },
     });
     expect(manager.getLayer(id)!.state.bands).toEqual([4, 3, 2]);
+  });
+
+  it('stores a caller-supplied beforeId and trims blanks to null', async () => {
+    const { manager } = makeHarness();
+    const a = await manager.addRaster('https://example.com/a.tif', {
+      beforeId: 'existing-layer',
+    });
+    expect(manager.getLayer(a)!.beforeId).toBe('existing-layer');
+
+    const b = await manager.addRaster('https://example.com/b.tif', {
+      beforeId: '  ',
+    });
+    expect(manager.getLayer(b)!.beforeId).toBeNull();
   });
 
   it('creates the overlay once for multiple layers', async () => {

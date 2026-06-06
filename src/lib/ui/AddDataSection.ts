@@ -3,10 +3,11 @@ import { el } from './dom';
 export type AddDataSectionOptions = {
   /** Prefills the URL input (not loaded until the user clicks Load). */
   initialUrl?: string;
-  /** Called with a remote COG URL. */
-  onAddUrl: (url: string) => void;
-  /** Called with a locally selected or dropped GeoTIFF file. */
-  onAddFile: (file: File) => void;
+  /** Called with a remote COG URL and the optional before-layer id. */
+  onAddUrl: (url: string, beforeId?: string) => void;
+  /** Called with a locally selected or dropped GeoTIFF file and the
+   * optional before-layer id. */
+  onAddFile: (file: File, beforeId?: string) => void;
 };
 
 /**
@@ -44,12 +45,25 @@ export class AddDataSection {
     input.addEventListener('input', () => {
       loadBtn.disabled = input.value.trim().length === 0;
     });
+
+    // Optional: insert the raster beneath an existing style layer (e.g. a
+    // symbol layer) so labels stay readable.
+    const beforeIdInput = el('input', {
+      className: 'mlr-input',
+      type: 'text',
+      placeholder: 'Before layer id (optional)',
+      ariaLabel: 'before-id',
+      title:
+        'Id of an existing map layer to insert the raster beneath (e.g. a label layer). Leave empty to draw on top.',
+    });
+    const currentBeforeId = () => beforeIdInput.value.trim() || undefined;
+
     const submitUrl = () => {
       const url = input.value.trim();
       if (!url) return;
       input.value = '';
       loadBtn.disabled = true;
-      options.onAddUrl(url);
+      options.onAddUrl(url, currentBeforeId());
     };
     loadBtn.addEventListener('click', submitUrl);
     input.addEventListener('keydown', (e) => {
@@ -66,7 +80,7 @@ export class AddDataSection {
     fileInput.style.display = 'none';
     fileInput.addEventListener('change', () => {
       const f = fileInput.files?.[0];
-      if (f && isTiff(f)) options.onAddFile(f);
+      if (f && isTiff(f)) options.onAddFile(f, currentBeforeId());
       fileInput.value = '';
     });
 
@@ -97,7 +111,7 @@ export class AddDataSection {
       e.preventDefault();
       dropZone.classList.remove('dragover');
       const f = e.dataTransfer?.files[0];
-      if (f && isTiff(f)) options.onAddFile(f);
+      if (f && isTiff(f)) options.onAddFile(f, currentBeforeId());
     });
 
     this.el = el(
@@ -106,6 +120,7 @@ export class AddDataSection {
       el('div', { className: 'mlr-section-title', text: 'Add data' }),
       urlRow,
       dropZone,
+      beforeIdInput,
     );
   }
 }

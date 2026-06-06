@@ -64,6 +64,8 @@ export interface RasterLayer {
   palette: ImageData | null;
   /** GPU upload of {@link palette}; created lazily once a device exists. */
   paletteTexture: Texture | null;
+  /** Map style layer id to insert the raster beneath, when set. */
+  beforeId: string | null;
   bounds: GeographicBounds | null;
   /** Fit the map to the layer bounds once loaded. */
   zoomTo: boolean;
@@ -86,6 +88,7 @@ export function toLayerInfo(layer: RasterLayer): RasterLayerInfo {
     source: layer.source,
     bandCount: layer.bandCount,
     bandNames: layer.bandNames ? new Map(layer.bandNames) : null,
+    beforeId: layer.beforeId,
     state: { ...layer.state },
   };
 }

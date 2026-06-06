@@ -243,6 +243,7 @@ export class LayerManager {
       bandNames: null,
       palette: null,
       paletteTexture: null,
+      beforeId: options?.beforeId?.trim() || null,
       bounds: null,
       zoomTo: options?.zoomTo ?? true,
       loading: true,
@@ -520,12 +521,18 @@ export class LayerManager {
   private _buildCogLayer(layer: RasterLayer): COGLayer<MultiBandTileData> {
     const renderTile = this._renderTileFor(layer);
 
-    return new COGLayer({
+    // beforeId is read by @deck.gl/mapbox's MapboxOverlay in interleaved
+    // mode but missing from COGLayer's narrower props type — build the props
+    // as a const so structural assignability applies instead of the
+    // excess-property check. Only forward ids that exist in the current
+    // style; a stale id would make the overlay throw on the next style event.
+    const cogProps = {
       id: layer.id,
       geotiff: layer.geotiff!,
       opacity: layer.state.opacity,
       getTileData,
       renderTile,
+      beforeId: this._resolveBeforeId(layer.beforeId),
       onGeoTIFFLoad: (
         _tiff: GeoTIFF,
         options: { geographicBounds: GeographicBounds },
@@ -536,7 +543,23 @@ export class LayerManager {
           this._fitBounds(layer.bounds);
         }
       },
-    });
+    };
+    return new COGLayer(cogProps);
+  }
+
+  /** Returns the beforeId only when that layer exists in the map's current
+   * style (warns otherwise). */
+  private _resolveBeforeId(beforeId: string | null): string | undefined {
+    if (!beforeId) return undefined;
+    try {
+      if (this._map.getLayer(beforeId)) return beforeId;
+    } catch {
+      return undefined;
+    }
+    console.warn(
+      `maplibre-gl-raster: beforeId layer "${beforeId}" not found in the map style; drawing the raster on top.`,
+    );
+    return undefined;
   }
 
   /** Picks the render pipeline for a layer: embedded palette lookup, named
