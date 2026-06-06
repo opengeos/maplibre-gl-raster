@@ -553,6 +553,7 @@ export class RasterControl implements IControl {
     const buttonRight = mapRect.right - buttonRect.right;
 
     const panelGap = 5; // Gap between button and panel
+    const edgeMargin = 10; // Breathing room between the panel and the map edge
 
     // Reset all positioning
     this._panel.style.top = '';
@@ -560,30 +561,52 @@ export class RasterControl implements IControl {
     this._panel.style.left = '';
     this._panel.style.right = '';
 
+    // Offset of the panel's anchored edge from the same edge of the map
+    // container (top edge for top-* positions, bottom edge for bottom-*).
+    const anchorOffset =
+      (position === 'top-left' || position === 'top-right'
+        ? buttonTop
+        : buttonBottom) +
+      buttonRect.height +
+      panelGap;
+
     switch (position) {
       case 'top-left':
         // Panel expands down and to the right
-        this._panel.style.top = `${buttonTop + buttonRect.height + panelGap}px`;
+        this._panel.style.top = `${anchorOffset}px`;
         this._panel.style.left = `${buttonLeft}px`;
         break;
 
       case 'top-right':
         // Panel expands down and to the left
-        this._panel.style.top = `${buttonTop + buttonRect.height + panelGap}px`;
+        this._panel.style.top = `${anchorOffset}px`;
         this._panel.style.right = `${buttonRight}px`;
         break;
 
       case 'bottom-left':
         // Panel expands up and to the right
-        this._panel.style.bottom = `${buttonBottom + buttonRect.height + panelGap}px`;
+        this._panel.style.bottom = `${anchorOffset}px`;
         this._panel.style.left = `${buttonLeft}px`;
         break;
 
       case 'bottom-right':
         // Panel expands up and to the left
-        this._panel.style.bottom = `${buttonBottom + buttonRect.height + panelGap}px`;
+        this._panel.style.bottom = `${anchorOffset}px`;
         this._panel.style.right = `${buttonRight}px`;
         break;
     }
+
+    // The stylesheet caps the panel at min(80vh, 720px), but those units do
+    // not know the panel is offset inside the map container. On a short map
+    // the panel would extend past the container and get clipped (maps
+    // commonly have overflow: hidden) before its own scrollbar engages, so
+    // also cap it to the space left between the anchor and the opposite map
+    // edge. The 160px floor keeps the panel usable when the map is tiny;
+    // overflow-y: auto then scrolls the content.
+    const available = Math.max(
+      160,
+      mapRect.height - anchorOffset - edgeMargin,
+    );
+    this._panel.style.maxHeight = `min(80vh, 720px, ${available}px)`;
   }
 }
