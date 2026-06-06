@@ -76,7 +76,7 @@ function isRasterControlState(value: unknown): value is Partial<RasterControlSta
 export const plugin: GeoLibrePlugin = {
   id: "maplibre-gl-raster",
   name: "MapLibre GL Raster",
-  version: "0.1.1",
+  version: "0.1.2",
   activate(app) {
     control = control ?? createControl();
     const added = app.addMapControl(control, position);

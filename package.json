@@ -1,6 +1,6 @@
 {
   "name": "maplibre-gl-raster",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A MapLibre GL JS plugin for visualizing local and remote raster datasets (GeoTIFF/COG)",
   "type": "module",
   "main": "./dist/index.mjs",

@@ -6,8 +6,8 @@
  * following the user's prefers-color-scheme setting automatically.
  */
 
-.plugin-control,
-.plugin-control-panel {
+.mlr-control,
+.mlr-control-panel {
   --mlr-bg: #fff;
   --mlr-surface-muted: #f1f3f5;
   --mlr-surface-soft: #f7f8f9;
@@ -36,8 +36,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .plugin-control,
-  .plugin-control-panel {
+  .mlr-control,
+  .mlr-control-panel {
     --mlr-bg: #23282e;
     --mlr-surface-muted: #2e343b;
     --mlr-surface-soft: #2a3036;
@@ -70,8 +70,8 @@
    outranks maplibre-gl's `.maplibregl-ctrl-group { background: #fff }`
    regardless of stylesheet order, so the button follows the theme (a white
    button with a light icon has no contrast in dark mode). */
-.plugin-control,
-.maplibregl-ctrl.plugin-control {
+.mlr-control,
+.maplibregl-ctrl.mlr-control {
   background: var(--mlr-bg);
   border-radius: 4px;
   box-shadow: 0 0 0 2px var(--mlr-shadow);
@@ -79,7 +79,7 @@
 }
 
 /* Toggle button - 29x29 to match navigation control */
-.plugin-control-toggle {
+.mlr-control-toggle {
   background: none;
   border: none;
   padding: 0;
@@ -93,11 +93,11 @@
   color: var(--mlr-text-strong);
 }
 
-.plugin-control-toggle:hover {
+.mlr-control-toggle:hover {
   background-color: var(--mlr-hover);
 }
 
-.plugin-control-toggle .plugin-control-icon {
+.mlr-control-toggle .mlr-control-icon {
   width: 100%;
   height: 100%;
   position: relative;
@@ -107,7 +107,7 @@
   line-height: 0;
 }
 
-.plugin-control-toggle .plugin-control-icon svg {
+.mlr-control-toggle .mlr-control-icon svg {
   width: 22px;
   height: 22px;
   display: block;
@@ -116,7 +116,7 @@
 }
 
 /* Panel - positioned dynamically by JavaScript for floating behavior */
-.plugin-control-panel {
+.mlr-control-panel {
   position: absolute;
   /* Position is set dynamically by _updatePanelPosition() */
   background: var(--mlr-bg);
@@ -133,12 +133,12 @@
   display: none;
 }
 
-.plugin-control-panel.expanded {
+.mlr-control-panel.expanded {
   display: block;
 }
 
 /* Panel header */
-.plugin-control-header {
+.mlr-control-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -150,12 +150,12 @@
   margin-bottom: 8px;
 }
 
-.plugin-control-title {
+.mlr-control-title {
   flex: 1 1 auto;
   font-size: 13px;
 }
 
-.plugin-control-close {
+.mlr-control-close {
   width: 20px;
   height: 20px;
   border: none;
@@ -171,12 +171,12 @@
   justify-content: center;
 }
 
-.plugin-control-close:hover {
+.mlr-control-close:hover {
   color: var(--mlr-text);
 }
 
 /* Content */
-.plugin-control-content {
+.mlr-control-content {
   max-height: min(72vh, 660px);
   overflow-y: auto;
   /* Histogram drag handles are centered on the chart edges and poke a few
@@ -189,7 +189,7 @@
   padding-right: 6px;
 }
 
-.plugin-control-placeholder {
+.mlr-control-placeholder {
   margin: 0;
   color: var(--mlr-text-muted);
   font-size: 12px;
@@ -198,33 +198,33 @@
 }
 
 /* Scrollbar styling */
-.plugin-control-content::-webkit-scrollbar {
+.mlr-control-content::-webkit-scrollbar {
   width: 6px;
 }
 
-.plugin-control-content::-webkit-scrollbar-track {
+.mlr-control-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.plugin-control-content::-webkit-scrollbar-thumb {
+.mlr-control-content::-webkit-scrollbar-thumb {
   background: var(--mlr-scrollbar);
   border-radius: 3px;
 }
 
-.plugin-control-content::-webkit-scrollbar-thumb:hover {
+.mlr-control-content::-webkit-scrollbar-thumb:hover {
   background: var(--mlr-scrollbar-hover);
 }
 
 /* Form elements */
-.plugin-control-group {
+.mlr-control-group {
   margin-bottom: 12px;
 }
 
-.plugin-control-group:last-child {
+.mlr-control-group:last-child {
   margin-bottom: 0;
 }
 
-.plugin-control-label {
+.mlr-control-label {
   display: block;
   margin-bottom: 4px;
   font-size: 12px;
@@ -232,7 +232,7 @@
   color: var(--mlr-text-soft);
 }
 
-.plugin-control-input {
+.mlr-control-input {
   width: 100%;
   padding: 8px 10px;
   font-size: 14px;
@@ -244,12 +244,12 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.plugin-control-input:focus {
+.mlr-control-input:focus {
   border-color: var(--mlr-accent);
   box-shadow: 0 0 0 3px var(--mlr-accent-soft);
 }
 
-.plugin-control-button {
+.mlr-control-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -264,33 +264,33 @@
   transition: background-color 0.15s;
 }
 
-.plugin-control-button:hover {
+.mlr-control-button:hover {
   background: var(--mlr-accent-strong);
 }
 
-.plugin-control-button:focus {
+.mlr-control-button:focus {
   outline: 2px solid var(--mlr-accent);
   outline-offset: 2px;
 }
 
-.plugin-control-button:disabled {
+.mlr-control-button:disabled {
   background: var(--mlr-disabled-bg);
   cursor: not-allowed;
 }
 
 /* Utility classes */
-.plugin-control-flex {
+.mlr-control-flex {
   display: flex;
   gap: 8px;
 }
 
-.plugin-control-flex-col {
+.mlr-control-flex-col {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.plugin-control-divider {
+.mlr-control-divider {
   height: 1px;
   background: var(--mlr-border-soft);
   margin: 12px 0;
