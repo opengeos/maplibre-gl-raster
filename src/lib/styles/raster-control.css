@@ -46,7 +46,7 @@
   width: 22px;
   height: 22px;
   display: block;
-  stroke: currentColor;
+  stroke: currentcolor;
   fill: none;
 }
 
@@ -455,7 +455,7 @@
   color: #c0392b;
   font-size: 11px;
   padding: 4px 0;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Settings */
@@ -553,7 +553,7 @@
   top: 50%;
   border-radius: 50%;
   background: #fff;
-  border: 1.5px solid currentColor;
+  border: 1.5px solid currentcolor;
   transform: translate(-50%, -50%);
   cursor: ew-resize;
   box-sizing: border-box;

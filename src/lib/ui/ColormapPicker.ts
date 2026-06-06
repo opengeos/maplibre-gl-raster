@@ -62,13 +62,15 @@ export class ColormapPicker {
    * @param value - Colormap name
    */
   update(value: string): void {
-    this._select.value = value;
     this._updatePreview(value);
   }
 
   private _updatePreview(value: string): void {
-    const active = COLORMAP_OPTIONS.find((o) => o.name === value);
-    if (!active) return;
+    // Unknown names fall back to the first option so the select and the
+    // preview never go stale or out of sync.
+    const active =
+      COLORMAP_OPTIONS.find((o) => o.name === value) ?? COLORMAP_OPTIONS[0];
+    this._select.value = active.name;
     this._preview.style.backgroundPosition = `0 ${-active.rowIndex * PREVIEW_HEIGHT}px`;
     this._preview.style.transform = active.reversed ? 'scaleX(-1)' : '';
   }

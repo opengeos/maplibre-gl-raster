@@ -237,7 +237,7 @@ export class SettingsSection {
       (_, i) => i + 1,
     );
 
-    this._body.appendChild(this._buildModeField(state, mode));
+    this._body.appendChild(this._buildModeField(state, mode, bandOptions));
     this._body.appendChild(
       this._buildBandsField(layer, state, mode, bandOptions),
     );
@@ -257,7 +257,12 @@ export class SettingsSection {
   private _buildModeField(
     state: RasterLayerState,
     mode: RasterMode,
+    bandOptions: number[],
   ): HTMLElement {
+    // Clamp the RGB default to the bands that actually exist so 1- or
+    // 2-band rasters don't get invalid indices written into state.
+    const maxBand = bandOptions[bandOptions.length - 1] ?? 1;
+    const rgbDefault = [1, 2, 3].map((b) => Math.min(b, maxBand));
     const modeSelect = select(
       [
         { value: 'rgb', label: 'RGB / composite' },
@@ -267,7 +272,7 @@ export class SettingsSection {
       (next) => {
         this._setState({
           mode: next as RasterMode,
-          bands: next === 'single' ? [state.bands[0] ?? 1] : [1, 2, 3],
+          bands: next === 'single' ? [state.bands[0] ?? 1] : rgbDefault,
           rescale: null,
         });
         this.render();

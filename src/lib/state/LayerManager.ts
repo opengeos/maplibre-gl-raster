@@ -170,10 +170,14 @@ export class LayerManager {
     source: string | File,
     options?: AddRasterOptions,
   ): Promise<string> {
+    const id = options?.id ?? generateId('raster');
+    if (this.getLayer(id)) {
+      throw new Error(`Raster layer id "${id}" already exists`);
+    }
     const isFile = typeof source !== 'string';
     const url = isFile ? URL.createObjectURL(source) : source;
     const layer: RasterLayer = {
-      id: options?.id ?? generateId('raster'),
+      id,
       name:
         options?.name ?? deriveLayerName(isFile ? source.name : source),
       source: isFile

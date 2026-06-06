@@ -90,7 +90,7 @@ const inflight = new Map<string, Promise<GeoTIFF>>();
  * Open a GeoTIFF from a URL (http(s) or blob:). Equivalent to
  * `GeoTIFF.fromUrl(url)` plus the CORS workaround above. Dedupes concurrent
  * requests for the same URL so double-invoked effects don't kick off two
- * parallel reads.
+ * parallel reads; entries are dropped once settled so the map stays bounded.
  */
 export function loadGeoTIFF(url: string): Promise<GeoTIFF> {
   const existing = inflight.get(url);
@@ -109,6 +109,6 @@ export function loadGeoTIFF(url: string): Promise<GeoTIFF> {
   })();
 
   inflight.set(url, promise);
-  promise.catch(() => inflight.delete(url));
+  promise.finally(() => inflight.delete(url)).catch(() => {});
   return promise;
 }

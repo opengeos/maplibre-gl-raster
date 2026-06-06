@@ -19,7 +19,7 @@ const DEMO_COG =
 function App() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<Map | null>(null);
-  const { state, toggle } = useRasterState({ collapsed: false });
+  const { state, setState, toggle } = useRasterState({ collapsed: false });
 
   // Initialize the map
   useEffect(() => {
@@ -47,8 +47,11 @@ function App() {
     };
   }, []);
 
+  // Mirror control-driven changes (e.g. the panel's own close button) into
+  // local state so the external toggle button label stays in sync.
   const handleStateChange = (newState: typeof state) => {
     console.log('Control state changed:', newState);
+    setState(newState);
   };
 
   // Load a demo COG once the control is on the map. Users can add more

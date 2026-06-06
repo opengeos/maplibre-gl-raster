@@ -22,6 +22,9 @@ export class AddDataSection {
    * @param options - URL / file callbacks
    */
   constructor(options: AddDataSectionOptions) {
+    // The accept attribute is advisory (and drag-drop bypasses it entirely),
+    // so filter by extension before handing files to the raster loader.
+    const isTiff = (file: File): boolean => /\.tiff?$/i.test(file.name);
     const input = el('input', {
       className: 'mlr-input',
       type: 'text',
@@ -60,7 +63,7 @@ export class AddDataSection {
     fileInput.style.display = 'none';
     fileInput.addEventListener('change', () => {
       const f = fileInput.files?.[0];
-      if (f) options.onAddFile(f);
+      if (f && isTiff(f)) options.onAddFile(f);
       fileInput.value = '';
     });
 
@@ -75,7 +78,10 @@ export class AddDataSection {
     );
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') fileInput.click();
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+      }
     });
     dropZone.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -88,7 +94,7 @@ export class AddDataSection {
       e.preventDefault();
       dropZone.classList.remove('dragover');
       const f = e.dataTransfer?.files[0];
-      if (f) options.onAddFile(f);
+      if (f && isTiff(f)) options.onAddFile(f);
     });
 
     this.el = el(
