@@ -537,10 +537,17 @@ export class LayerManager {
         _tiff: GeoTIFF,
         options: { geographicBounds: GeographicBounds },
       ) => {
+        // Only the first arrival is an observable change; onGeoTIFFLoad can
+        // re-fire on later rebuilds with the same already-loaded GeoTIFF, and
+        // re-emitting there could ping-pong with handlers that call setState.
+        const boundsArrived = !layer.bounds;
         layer.bounds = options.geographicBounds;
         if (layer.zoomTo) {
           layer.zoomTo = false;
           this._fitBounds(layer.bounds);
+        }
+        if (boundsArrived) {
+          this._emit({ type: 'rasterchange', layerId: layer.id });
         }
       },
     };

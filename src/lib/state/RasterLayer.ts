@@ -1,19 +1,16 @@
 import type { GeoTIFF } from '@developmentseed/geotiff';
 import type { Texture } from '@luma.gl/core';
 import type {
+  GeographicBounds,
   RasterLayerInfo,
   RasterLayerSource,
   RasterLayerState,
 } from '../core/types';
 import type { AutoStats } from '../raster/stats';
 
-/** Geographic (WGS84) bounds of a layer, as reported by COGLayer. */
-export type GeographicBounds = {
-  west: number;
-  south: number;
-  east: number;
-  north: number;
-};
+// Moved to core/types so the public RasterLayerInfo can reference it;
+// re-exported here for backwards compatibility.
+export type { GeographicBounds } from '../core/types';
 
 /** Default visualization state for a freshly added layer. Mode/bands are
  * re-picked automatically once the band count is known (unless the caller
@@ -89,6 +86,9 @@ export function toLayerInfo(layer: RasterLayer): RasterLayerInfo {
     bandCount: layer.bandCount,
     bandNames: layer.bandNames ? new Map(layer.bandNames) : null,
     beforeId: layer.beforeId,
+    bounds: layer.bounds ? { ...layer.bounds } : null,
+    loading: layer.loading,
+    error: layer.error,
     state: { ...layer.state },
   };
 }

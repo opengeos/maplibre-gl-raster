@@ -8,6 +8,7 @@ export { useRasterState } from './lib/hooks';
 // Re-export types for React consumers
 export type {
   AddRasterOptions,
+  GeographicBounds,
   RasterControlEvent,
   RasterControlEventData,
   RasterControlEventHandler,
