@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import maplibregl, { Map } from 'maplibre-gl';
-import { PluginControlReact, usePluginState } from '../../src/react';
+import { RasterControlReact, useRasterState } from '../../src/react';
 import '../../src/index.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+// A public Cloud Optimized GeoTIFF prefilled in the Add data input
+// (not loaded until the user clicks Load).
+const DEMO_COG = 'https://data.source.coop/opengeos/geoai/naip-test.tif';
 
 /**
  * Main App component demonstrating the React integration
@@ -11,7 +15,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 function App() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<Map | null>(null);
-  const { state, toggle } = usePluginState({ collapsed: false });
+  const { state, setState, toggle } = useRasterState({ collapsed: false });
 
   // Initialize the map
   useEffect(() => {
@@ -19,7 +23,7 @@ function App() {
 
     const mapInstance = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'https://demotiles.maplibre.org/style.json',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       center: [0, 0],
       zoom: 2,
     });
@@ -39,8 +43,11 @@ function App() {
     };
   }, []);
 
+  // Mirror control-driven changes (e.g. the panel's own close button) into
+  // local state so the external toggle button label stays in sync.
   const handleStateChange = (newState: typeof state) => {
-    console.log('Plugin state changed:', newState);
+    console.log('Control state changed:', newState);
+    setState(newState);
   };
 
   return (
@@ -67,13 +74,13 @@ function App() {
         {state.collapsed ? 'Expand' : 'Collapse'} Panel
       </button>
 
-      {/* Plugin control */}
+      {/* Raster control */}
       {map && (
-        <PluginControlReact
+        <RasterControlReact
           map={map}
-          title="React Plugin"
           collapsed={state.collapsed}
-          panelWidth={320}
+          panelWidth={360}
+          defaultUrl={DEMO_COG}
           onStateChange={handleStateChange}
         />
       )}

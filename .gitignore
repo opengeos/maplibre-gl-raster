@@ -38,3 +38,6 @@ dist-examples/
 .env.local
 .env.*.local
 .vite/
+
+# Playwright CLI session artifacts
+.playwright-cli/

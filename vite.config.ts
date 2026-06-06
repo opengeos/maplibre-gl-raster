@@ -12,15 +12,15 @@ export default defineConfig({
     // Emit declarations to dist/types (matching the package.json "exports"
     // map). CSS side-effect imports are stripped automatically. bundleTypes
     // rolls each entry into a single self-contained .d.ts so consumers under
-    // Node16 module resolution have no unresolved relative imports, and the
-    // cjs outDir adds matching .d.cts files for the "require" condition.
+    // Node16 module resolution have no unresolved relative imports.
     dts({
       tsconfigPath: resolve(__dirname, "tsconfig.build.json"),
       entryRoot: resolve(__dirname, "src"),
       bundleTypes: true,
-      outDirs: ["dist/types", { dir: "dist/types", moduleFormat: "cjs" }],
+      outDirs: ["dist/types"],
     }),
   ],
+  worker: { format: "es" },
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
@@ -32,24 +32,26 @@ export default defineConfig({
         index: resolve(__dirname, "src/index.ts"),
         react: resolve(__dirname, "src/react.ts"),
       },
-      name: "GeoLibrePluginTemplate",
-      formats: ["es", "cjs"],
-      fileName: (format, entryName) => {
-        const ext = format === "es" ? "mjs" : "cjs";
-        return `${entryName}.${ext}`;
-      },
+      name: "MaplibreGLRaster",
+      // ESM-only: the bundled @developmentseed geotiff stack uses top-level
+      // await, which cannot be emitted as CJS.
+      formats: ["es"],
+      fileName: (_format, entryName) => `${entryName}.mjs`,
     },
     rollupOptions: {
-      external: ["react", "react-dom", "maplibre-gl"],
+      // Peer dependencies stay external; bundling a second copy of
+      // deck.gl/luma.gl would break luma Device sharing with the host app.
+      external: [
+        /^react($|\/)/,
+        /^react-dom($|\/)/,
+        /^maplibre-gl($|\/)/,
+        /^@deck\.gl\//,
+        /^@luma\.gl\//,
+      ],
       output: {
-        globals: {
-          react: "React",
-          "react-dom": "ReactDOM",
-          "maplibre-gl": "maplibregl",
-        },
         assetFileNames: (assetInfo) => {
           if (assetInfo.name === "style.css")
-            return "geolibre-plugin-template.css";
+            return "maplibre-gl-raster.css";
           return assetInfo.name || "";
         },
       },

@@ -1,48 +1,61 @@
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl';
+import { LayerManager } from '../state/LayerManager';
+import { toLayerInfo } from '../state/RasterLayer';
+import { PanelUI } from '../ui/PanelUI';
 import type {
-  PluginControlOptions,
-  PluginState,
-  PluginControlEvent,
-  PluginControlEventHandler,
+  AddRasterOptions,
+  RasterControlEvent,
+  RasterControlEventHandler,
+  RasterControlOptions,
+  RasterControlState,
+  RasterLayerInfo,
+  RasterLayerState,
 } from './types';
 
 /**
- * Default options for the PluginControl
+ * Default options for the RasterControl
  */
-const DEFAULT_OPTIONS: Required<PluginControlOptions> = {
+const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   collapsed: true,
   position: 'top-right',
-  title: 'Plugin Control',
-  panelWidth: 300,
+  title: 'Raster',
+  panelWidth: 360,
   className: '',
+  interleaved: true,
+  defaultUrl: '',
 };
 
 /**
  * Event handlers map type
  */
-type EventHandlersMap = globalThis.Map<PluginControlEvent, Set<PluginControlEventHandler>>;
+type EventHandlersMap = globalThis.Map<RasterControlEvent, Set<RasterControlEventHandler>>;
 
 /**
- * A template MapLibre GL control that can be customized for various plugin needs.
+ * A MapLibre GL control for visualizing local and remote raster datasets
+ * (GeoTIFF / Cloud Optimized GeoTIFF). A collapsible button expands into a
+ * panel with an "Add data" section (URL or local file), a layer list, and
+ * per-layer rendering settings (bands, rescale histograms, colormaps,
+ * nodata, stretch, gamma, opacity). Rendering uses a deck.gl COGLayer
+ * pipeline on a shared MapboxOverlay.
  *
  * @example
  * ```typescript
- * const control = new PluginControl({
- *   title: 'My Custom Control',
- *   collapsed: false,
- *   panelWidth: 320,
- * });
+ * const control = new RasterControl({ collapsed: false });
  * map.addControl(control, 'top-right');
+ * await control.addRaster('https://example.com/data/cog.tif');
  * ```
  */
-export class PluginControl implements IControl {
+export class RasterControl implements IControl {
   private _map?: MapLibreMap;
   private _mapContainer?: HTMLElement;
   private _container?: HTMLElement;
   private _panel?: HTMLElement;
-  private _options: Required<PluginControlOptions>;
-  private _state: PluginState;
+  private _options: Required<RasterControlOptions>;
+  private _state: RasterControlState;
   private _eventHandlers: EventHandlersMap = new globalThis.Map();
+  private _layerManager?: LayerManager;
+  private _panelUI?: PanelUI;
+  private _onReady: (() => void)[] = [];
 
   // Panel positioning handlers
   private _resizeHandler: (() => void) | null = null;
@@ -50,11 +63,11 @@ export class PluginControl implements IControl {
   private _clickOutsideHandler: ((e: MouseEvent) => void) | null = null;
 
   /**
-   * Creates a new PluginControl instance.
+   * Creates a new RasterControl instance.
    *
    * @param options - Configuration options for the control
    */
-  constructor(options?: Partial<PluginControlOptions>) {
+  constructor(options?: Partial<RasterControlOptions>) {
     this._options = { ...DEFAULT_OPTIONS, ...options };
     this._state = {
       collapsed: this._options.collapsed,
@@ -79,6 +92,26 @@ export class PluginControl implements IControl {
     // Append panel to map container for independent positioning (avoids overlap with other controls)
     this._mapContainer.appendChild(this._panel);
 
+    // Wire the raster machinery: one LayerManager (owning the deck.gl
+    // overlay) plus the panel UI bound to it.
+    this._layerManager = new LayerManager(map, {
+      interleaved: this._options.interleaved,
+    });
+    this._forwardLayerManagerEvents(this._layerManager);
+    const content = this._panel.querySelector<HTMLElement>(
+      '.plugin-control-content',
+    );
+    if (content) {
+      this._panelUI = new PanelUI(content, this._layerManager, {
+        defaultUrl: this._options.defaultUrl,
+      });
+    }
+
+    // Flush addRaster calls made before the control was added to a map.
+    const ready = this._onReady;
+    this._onReady = [];
+    for (const resolve of ready) resolve();
+
     // Setup event listeners for panel positioning and click-outside
     this._setupEventListeners();
 
@@ -99,6 +132,13 @@ export class PluginControl implements IControl {
    * Implements the IControl interface.
    */
   onRemove(): void {
+    // Tear down the raster machinery first (removes the deck.gl overlay,
+    // aborts in-flight loads, revokes blob URLs).
+    this._panelUI?.destroy();
+    this._panelUI = undefined;
+    this._layerManager?.destroy();
+    this._layerManager = undefined;
+
     // Remove event listeners
     if (this._resizeHandler) {
       window.removeEventListener('resize', this._resizeHandler);
@@ -131,7 +171,7 @@ export class PluginControl implements IControl {
    *
    * @returns The current plugin state
    */
-  getState(): PluginState {
+  getState(): RasterControlState {
     return { ...this._state };
   }
 
@@ -140,7 +180,7 @@ export class PluginControl implements IControl {
    *
    * @param newState - Partial state to merge with current state
    */
-  setState(newState: Partial<PluginState>): void {
+  setState(newState: Partial<RasterControlState>): void {
     this._state = { ...this._state, ...newState };
     this._emit('statechange');
   }
@@ -189,7 +229,7 @@ export class PluginControl implements IControl {
    * @param event - The event type to listen for
    * @param handler - The callback function
    */
-  on(event: PluginControlEvent, handler: PluginControlEventHandler): void {
+  on(event: RasterControlEvent, handler: RasterControlEventHandler): void {
     if (!this._eventHandlers.has(event)) {
       this._eventHandlers.set(event, new Set());
     }
@@ -202,7 +242,7 @@ export class PluginControl implements IControl {
    * @param event - The event type
    * @param handler - The callback function to remove
    */
-  off(event: PluginControlEvent, handler: PluginControlEventHandler): void {
+  off(event: RasterControlEvent, handler: RasterControlEventHandler): void {
     this._eventHandlers.get(event)?.delete(handler);
   }
 
@@ -225,14 +265,132 @@ export class PluginControl implements IControl {
   }
 
   /**
+   * Adds a raster layer from a remote COG URL or a local GeoTIFF File.
+   *
+   * The returned promise resolves with the layer id once the GeoTIFF header
+   * loads (waiting for the control to be added to a map first, if needed)
+   * and rejects when loading fails.
+   *
+   * @param source - COG URL or a local GeoTIFF File
+   * @param options - Id/name/state overrides and zoom behavior
+   * @returns The new layer's id
+   */
+  async addRaster(
+    source: string | File,
+    options?: AddRasterOptions,
+  ): Promise<string> {
+    if (!this._layerManager) {
+      await new Promise<void>((resolve) => this._onReady.push(resolve));
+    }
+    return this._layerManager!.addRaster(source, options);
+  }
+
+  /**
+   * Removes a raster layer.
+   *
+   * @param id - The layer id
+   */
+  removeRaster(id: string): void {
+    this._layerManager?.removeRaster(id);
+  }
+
+  /**
+   * Gets a snapshot of one raster layer.
+   *
+   * @param id - The layer id
+   * @returns Layer info, or undefined when unknown
+   */
+  getRaster(id: string): RasterLayerInfo | undefined {
+    const layer = this._layerManager?.getLayer(id);
+    return layer ? toLayerInfo(layer) : undefined;
+  }
+
+  /**
+   * Gets snapshots of all raster layers in draw order (first = bottom).
+   *
+   * @returns Layer info array
+   */
+  getRasters(): RasterLayerInfo[] {
+    return this._layerManager?.getLayers().map(toLayerInfo) ?? [];
+  }
+
+  /**
+   * Merges a partial visualization state into a layer (bands, rescale,
+   * colormap, nodata, opacity, gamma, stretch, visible).
+   *
+   * @param id - The layer id
+   * @param patch - State fields to update
+   */
+  setRasterState(id: string, patch: Partial<RasterLayerState>): void {
+    this._layerManager?.setState(id, patch);
+  }
+
+  /**
+   * Shows or hides a raster layer.
+   *
+   * @param id - The layer id
+   * @param visible - Whether the layer should render
+   */
+  setVisible(id: string, visible: boolean): void {
+    this._layerManager?.setVisible(id, visible);
+  }
+
+  /**
+   * Selects the layer whose settings the panel edits.
+   *
+   * @param id - The layer id, or null to clear the selection
+   */
+  selectRaster(id: string | null): void {
+    this._layerManager?.select(id);
+  }
+
+  /**
+   * Fits the map view to a layer's bounds.
+   *
+   * @param id - The layer id
+   */
+  zoomToRaster(id: string): void {
+    this._layerManager?.zoomTo(id);
+  }
+
+  /**
+   * Moves a layer to a new position in the draw order.
+   *
+   * @param id - The layer id
+   * @param toIndex - Target index (0 = bottom)
+   */
+  reorderRaster(id: string, toIndex: number): void {
+    this._layerManager?.reorder(id, toIndex);
+  }
+
+  /** Re-emits LayerManager events through the control's event system. */
+  private _forwardLayerManagerEvents(manager: LayerManager): void {
+    for (const type of [
+      'rasteradd',
+      'rasterremove',
+      'rasterchange',
+      'rasterselect',
+      'error',
+    ] as const) {
+      manager.on(type, (e) =>
+        this._emit(type, { layerId: e.layerId, error: e.error }),
+      );
+    }
+  }
+
+  /**
    * Emits an event to all registered handlers.
    *
    * @param event - The event type to emit
+   * @param extra - Optional layerId/error payload for raster events
    */
-  private _emit(event: PluginControlEvent): void {
+  private _emit(
+    event: RasterControlEvent,
+    extra?: { layerId?: string; error?: Error },
+  ): void {
     const handlers = this._eventHandlers.get(event);
     if (handlers) {
-      const eventData = { type: event, state: this.getState() };
+      const eventData = { type: event, state: this.getState(), ...extra };
       handlers.forEach((handler) => handler(eventData));
     }
   }
@@ -257,10 +415,9 @@ export class PluginControl implements IControl {
     toggleBtn.innerHTML = `
       <span class="plugin-control-icon">
         <svg viewBox="0 0 24 24" width="22" height="22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1"/>
-          <rect x="14" y="3" width="7" height="7" rx="1"/>
-          <rect x="3" y="14" width="7" height="7" rx="1"/>
-          <rect x="14" y="14" width="7" height="7" rx="1"/>
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
         </svg>
       </span>
     `;
@@ -300,14 +457,9 @@ export class PluginControl implements IControl {
     header.appendChild(title);
     header.appendChild(closeBtn);
 
-    // Create content area
+    // Content area — populated by PanelUI in onAdd.
     const content = document.createElement('div');
     content.className = 'plugin-control-content';
-    content.innerHTML = `
-      <p class="plugin-control-placeholder">
-        Add your custom plugin content here.
-      </p>
-    `;
 
     panel.appendChild(header);
     panel.appendChild(content);
@@ -322,6 +474,10 @@ export class PluginControl implements IControl {
     // Click outside to close (check both container and panel since they're now separate)
     this._clickOutsideHandler = (e: MouseEvent) => {
       const target = e.target as Node;
+      // Ignore clicks whose target was detached mid-event (e.g. a panel
+      // button whose click handler re-rendered the settings UI) — contains()
+      // would report false and wrongly collapse the panel.
+      if (!target.isConnected) return;
       if (
         this._container &&
         this._panel &&

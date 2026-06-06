@@ -1,9 +1,86 @@
 import type { Map } from 'maplibre-gl';
 
+/** Rendering mode: RGB composite (one band per channel) or single band
+ * through a colormap. */
+export type RasterMode = 'rgb' | 'single';
+
+/** Curve applied to the rescaled [0, 1] value before gamma / colormap.
+ * "log" expands the low-value range (useful for skewed data with most
+ * variation near zero); "sqrt" is a gentler version. */
+export type RasterStretch = 'linear' | 'log' | 'sqrt';
+
+/** Nodata handling: 'auto' reads the value declared by the COG (and treats
+ * NaN as nodata for float data), a number overrides it in source units, and
+ * 'off' renders every pixel. */
+export type RasterNodata = number | 'off' | 'auto';
+
 /**
- * Options for configuring the PluginControl
+ * Per-layer visualization state.
  */
-export interface PluginControlOptions {
+export interface RasterLayerState {
+  /** Rendering mode. */
+  mode: RasterMode;
+  /** 1-indexed band selection: [r, g, b] in RGB mode, [band] in single mode. */
+  bands: number[];
+  /** Per-channel [min, max] rescale windows; null = auto (2-98% percentile
+   * from computed stats). */
+  rescale: [number, number][] | null;
+  /** Colormap name (single-band mode only). */
+  colormap: string;
+  /** Nodata handling. */
+  nodata: RasterNodata;
+  /** Layer transparency, 0 (invisible) to 1 (fully opaque). */
+  opacity: number;
+  /** Power-law gamma correction (1.0 = off). */
+  gamma: number;
+  /** Curve applied to rescaled values. */
+  stretch: RasterStretch;
+  /** Whether the layer is drawn on the map. */
+  visible: boolean;
+}
+
+/** Where a raster layer's data came from. */
+export type RasterLayerSource =
+  | { kind: 'url'; url: string }
+  | { kind: 'file'; fileName: string; objectUrl: string };
+
+/**
+ * Public, read-only snapshot of a raster layer.
+ */
+export interface RasterLayerInfo {
+  /** Stable layer id. */
+  id: string;
+  /** Display name shown in the layer list. */
+  name: string;
+  /** Data source. */
+  source: RasterLayerSource;
+  /** Band count, known once the GeoTIFF header loads. */
+  bandCount: number | null;
+  /** 1-indexed band names parsed from GDAL_METADATA, when present. */
+  bandNames: globalThis.Map<number, string> | null;
+  /** Current visualization state. */
+  state: RasterLayerState;
+}
+
+/**
+ * Options for {@link AddRasterOptions} consumers (RasterControl.addRaster).
+ */
+export interface AddRasterOptions {
+  /** Layer id; auto-generated when omitted. */
+  id?: string;
+  /** Display name; derived from the URL / file name when omitted. */
+  name?: string;
+  /** Initial visualization state overrides (mode/bands default from the
+   * loaded band count). */
+  state?: Partial<RasterLayerState>;
+  /** Fit the map to the raster's bounds once loaded. @default true */
+  zoomTo?: boolean;
+}
+
+/**
+ * Options for configuring the RasterControl
+ */
+export interface RasterControlOptions {
   /**
    * Whether the control panel should start collapsed (showing only the toggle button)
    * @default true
@@ -18,13 +95,13 @@ export interface PluginControlOptions {
 
   /**
    * Title displayed in the control header
-   * @default 'Plugin Control'
+   * @default 'Raster'
    */
   title?: string;
 
   /**
    * Width of the control panel in pixels
-   * @default 300
+   * @default 360
    */
   panelWidth?: number;
 
@@ -32,12 +109,25 @@ export interface PluginControlOptions {
    * Custom CSS class name for the control container
    */
   className?: string;
+
+  /**
+   * Render the deck.gl overlay interleaved with the basemap's layers.
+   * @default true
+   */
+  interleaved?: boolean;
+
+  /**
+   * Prefills the "Add data" URL input with this COG URL. The raster is NOT
+   * loaded automatically — the user still clicks Load.
+   * @default ''
+   */
+  defaultUrl?: string;
 }
 
 /**
  * Internal state of the plugin control
  */
-export interface PluginState {
+export interface RasterControlState {
   /**
    * Whether the control panel is currently collapsed
    */
@@ -57,7 +147,7 @@ export interface PluginState {
 /**
  * Props for the React wrapper component
  */
-export interface PluginControlReactProps extends PluginControlOptions {
+export interface RasterControlReactProps extends RasterControlOptions {
   /**
    * MapLibre GL map instance
    */
@@ -66,15 +156,41 @@ export interface PluginControlReactProps extends PluginControlOptions {
   /**
    * Callback fired when the control state changes
    */
-  onStateChange?: (state: PluginState) => void;
+  onStateChange?: (state: RasterControlState) => void;
+
+  /**
+   * Callback fired once the control is added to the map, with the control
+   * instance — use it to call imperative methods like addRaster().
+   */
+  onReady?: (control: import('./RasterControl').RasterControl) => void;
 }
 
 /**
- * Event types emitted by the plugin control
+ * Event types emitted by the raster control
  */
-export type PluginControlEvent = 'collapse' | 'expand' | 'statechange';
+export type RasterControlEvent =
+  | 'collapse'
+  | 'expand'
+  | 'statechange'
+  | 'rasteradd'
+  | 'rasterremove'
+  | 'rasterchange'
+  | 'rasterselect'
+  | 'error';
+
+/**
+ * Event payload passed to registered handlers.
+ */
+export interface RasterControlEventData {
+  type: RasterControlEvent;
+  state: RasterControlState;
+  /** Affected layer id for raster* events. */
+  layerId?: string;
+  /** Error detail for 'error' events. */
+  error?: Error;
+}
 
 /**
  * Event handler function type
  */
-export type PluginControlEventHandler = (event: { type: PluginControlEvent; state: PluginState }) => void;
+export type RasterControlEventHandler = (event: RasterControlEventData) => void;
