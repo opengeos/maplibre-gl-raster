@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import maplibregl, { Map } from 'maplibre-gl';
-import { RasterControlReact, useRasterState } from '../../src/react';
+import {
+  RasterControlReact,
+  useRasterState,
+  type RasterControl,
+} from '../../src/react';
 import '../../src/index.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+// A public Cloud Optimized GeoTIFF used as the demo layer.
+const DEMO_COG =
+  'https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/18/T/WL/2026/1/S2B_18TWL_20260101_0_L2A/TCI.tif';
 
 /**
  * Main App component demonstrating the React integration
@@ -19,7 +27,7 @@ function App() {
 
     const mapInstance = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'https://demotiles.maplibre.org/style.json',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       center: [0, 0],
       zoom: 2,
     });
@@ -40,7 +48,16 @@ function App() {
   }, []);
 
   const handleStateChange = (newState: typeof state) => {
-    console.log('Plugin state changed:', newState);
+    console.log('Control state changed:', newState);
+  };
+
+  // Load a demo COG once the control is on the map. Users can add more
+  // rasters via the panel (URL or local file).
+  const handleReady = (control: RasterControl) => {
+    control
+      .addRaster(DEMO_COG, { name: 'Sentinel-2 True Color (New York)' })
+      .then((id) => console.log('Demo raster loaded:', id))
+      .catch((err) => console.error('Demo raster failed to load:', err));
   };
 
   return (
@@ -67,14 +84,14 @@ function App() {
         {state.collapsed ? 'Expand' : 'Collapse'} Panel
       </button>
 
-      {/* Plugin control */}
+      {/* Raster control */}
       {map && (
         <RasterControlReact
           map={map}
-          title="React Plugin"
           collapsed={state.collapsed}
-          panelWidth={320}
+          panelWidth={340}
           onStateChange={handleStateChange}
+          onReady={handleReady}
         />
       )}
     </div>

@@ -5,7 +5,7 @@ This directory contains example implementations of the MapLibre GL Raster plugin
 ## Available Examples
 
 ### Basic Example
-A simple vanilla JavaScript/TypeScript example showing how to add the plugin control to a map.
+A vanilla TypeScript example that adds the RasterControl to a map and loads a demo Cloud Optimized GeoTIFF.
 
 ```bash
 # Run from project root
@@ -14,7 +14,7 @@ npm run dev
 ```
 
 ### React Example
-A React example demonstrating the React wrapper component and hooks.
+A React example demonstrating the RasterControlReact wrapper, hooks, and programmatic raster loading.
 
 ```bash
 # Run from project root
