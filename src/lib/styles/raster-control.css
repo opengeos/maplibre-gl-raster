@@ -591,6 +591,8 @@
 }
 
 .mlr-colormap-preview {
+  display: block;
+  width: 100%;
   border-radius: 2px;
   image-rendering: auto;
 }

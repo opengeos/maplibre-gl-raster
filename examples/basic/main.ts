@@ -5,7 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 // A public Cloud Optimized GeoTIFF prefilled in the Add data input
 // (not loaded until the user clicks Load).
-const DEMO_COG = 'https://data.source.coop/opengeos/geoai/naip-test.tif';
+const DEMO_COG = 'https://data.source.coop/giswqs/opengeos/nlcd_2021_land_cover_30m.tif';
 
 // Create map
 const map = new maplibregl.Map({

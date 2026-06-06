@@ -1,4 +1,5 @@
 import type { GeoTIFF } from '@developmentseed/geotiff';
+import type { Texture } from '@luma.gl/core';
 import type {
   RasterLayerInfo,
   RasterLayerSource,
@@ -16,12 +17,13 @@ export type GeographicBounds = {
 
 /** Default visualization state for a freshly added layer. Mode/bands are
  * re-picked automatically once the band count is known (unless the caller
- * supplied them explicitly). */
+ * supplied them explicitly); single-band rasters default to the image's
+ * embedded color table when present ('palette') or grayscale otherwise. */
 export const DEFAULT_LAYER_STATE: RasterLayerState = {
   mode: 'rgb',
   bands: [1, 2, 3],
   rescale: null,
-  colormap: 'viridis',
+  colormap: 'gray',
   nodata: 'auto',
   opacity: 1,
   gamma: 1,
@@ -58,6 +60,10 @@ export interface RasterLayer {
   autoStats: AutoStats | null;
   bandCount: number | null;
   bandNames: globalThis.Map<number, string> | null;
+  /** Embedded TIFF color table (256x1 RGBA), when the image carries one. */
+  palette: ImageData | null;
+  /** GPU upload of {@link palette}; created lazily once a device exists. */
+  paletteTexture: Texture | null;
   bounds: GeographicBounds | null;
   /** Fit the map to the layer bounds once loaded. */
   zoomTo: boolean;

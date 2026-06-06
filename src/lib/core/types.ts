@@ -25,7 +25,8 @@ export interface RasterLayerState {
   /** Per-channel [min, max] rescale windows; null = auto (2-98% percentile
    * from computed stats). */
   rescale: [number, number][] | null;
-  /** Colormap name (single-band mode only). */
+  /** Colormap name (single-band mode only). 'palette' uses the image's
+   * embedded color table; defaults to 'gray'. */
   colormap: string;
   /** Nodata handling. */
   nodata: RasterNodata;
@@ -117,11 +118,19 @@ export interface RasterControlOptions {
   interleaved?: boolean;
 
   /**
-   * Prefills the "Add data" URL input with this COG URL. The raster is NOT
-   * loaded automatically — the user still clicks Load.
+   * Prefills the "Add data" URL input with this COG URL. The raster is only
+   * loaded automatically when {@link autoLoad} is true; otherwise the user
+   * still clicks Load.
    * @default ''
    */
   defaultUrl?: string;
+
+  /**
+   * When true and {@link defaultUrl} is set, the raster is loaded as soon as
+   * the control is added to the map (instead of prefilling the URL input).
+   * @default false
+   */
+  autoLoad?: boolean;
 }
 
 /**

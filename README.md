@@ -111,6 +111,7 @@ The main control class implementing MapLibre's `IControl` interface.
 | `className`   | `string`  | `''`          | Custom CSS class name                                                     |
 | `interleaved` | `boolean` | `true`        | Render the deck.gl overlay interleaved with the basemap layers            |
 | `defaultUrl`  | `string`  | `''`          | Prefills the Add data URL input (not loaded until the user clicks Load)  |
+| `autoLoad`    | `boolean` | `false`       | Load `defaultUrl` automatically when the control is added to the map     |
 
 #### Raster Methods
 
@@ -147,7 +148,7 @@ interface RasterLayerState {
   mode: "rgb" | "single"; // RGB composite or single band + colormap
   bands: number[]; // 1-indexed band selection
   rescale: [number, number][] | null; // per-channel min/max; null = auto (2-98%)
-  colormap: string; // colormap name (single-band mode)
+  colormap: string; // colormap name; "palette" = embedded color table
   nodata: number | "off" | "auto"; // nodata handling
   opacity: number; // 0..1
   gamma: number; // power-law correction (1 = off)
@@ -156,7 +157,7 @@ interface RasterLayerState {
 }
 ```
 
-When a raster loads, the mode and bands are picked automatically (3+ bands → RGB `[1, 2, 3]`; otherwise single-band), and the rescale range defaults to the 2-98% percentile of sampled statistics. The first four bands are fetched as GPU textures, so band combinations among them re-render instantly without re-downloading tiles.
+When a raster loads, the mode and bands are picked automatically (3+ bands → RGB `[1, 2, 3]`; otherwise single-band), and the rescale range defaults to the 2-98% percentile of sampled statistics. Single-band rasters use the image's embedded color table when it carries one (`colormap: "palette"`) and grayscale otherwise. The first four bands are fetched as GPU textures, so band combinations among them re-render instantly without re-downloading tiles.
 
 ### RasterControlReact
 

@@ -11,7 +11,7 @@ import type { AutoStats, BandStats } from '../raster/stats';
 import { MAX_BAND_SLOTS } from '../raster/tile-loader';
 import type { RasterLayer } from '../state/RasterLayer';
 import { BandHistogram } from './BandHistogram';
-import { ColormapPicker } from './ColormapPicker';
+import { ColormapPicker, PALETTE_COLORMAP } from './ColormapPicker';
 import { clearEl, el, field, fmtNumber, select } from './dom';
 
 const RGB_CHANNELS = [
@@ -240,20 +240,38 @@ export class SettingsSection {
       (_, i) => i + 1,
     );
 
+    // The embedded color table maps raw index values directly to colors, so
+    // rescale / curve / gamma have no effect while it is active.
+    const paletteActive =
+      mode === 'single' &&
+      state.colormap === PALETTE_COLORMAP &&
+      layer.palette !== null;
+
     this._body.appendChild(this._buildModeField(state, mode, bandOptions));
     this._body.appendChild(
       this._buildBandsField(layer, state, mode, bandOptions),
     );
-    this._body.appendChild(this._buildRescaleField(layer, state, mode));
+    if (!paletteActive) {
+      this._body.appendChild(this._buildRescaleField(layer, state, mode));
+    }
     if (mode === 'single') {
-      const picker = new ColormapPicker(state.colormap, (name) =>
-        this._setState({ colormap: name }),
-      );
+      const picker = new ColormapPicker({
+        value: state.colormap,
+        palette: layer.palette,
+        stats: statsForBand(layer.autoStats, state.bands[0] ?? 1),
+        onChange: (name) => {
+          this._setState({ colormap: name });
+          // Switching to/from the palette shows/hides rescale-curve-gamma.
+          this.render();
+        },
+      });
       this._body.appendChild(field('Colormap', picker.el, HELP.colormap));
     }
     this._body.appendChild(this._buildNodataField(state));
-    this._body.appendChild(this._buildCurveField(state));
-    this._body.appendChild(this._buildGammaField(state));
+    if (!paletteActive) {
+      this._body.appendChild(this._buildCurveField(state));
+      this._body.appendChild(this._buildGammaField(state));
+    }
     this._body.appendChild(this._buildOpacityField(state));
   }
 
