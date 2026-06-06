@@ -3,29 +3,19 @@
   "version": "0.1.0",
   "description": "A MapLibre GL JS plugin for visualizing local and remote raster datasets (GeoTIFF/COG)",
   "type": "module",
-  "main": "./dist/index.cjs",
+  "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/types/index.d.ts",
   "exports": {
     ".": {
-      "import": {
-        "types": "./dist/types/index.d.ts",
-        "default": "./dist/index.mjs"
-      },
-      "require": {
-        "types": "./dist/types/index.d.cts",
-        "default": "./dist/index.cjs"
-      }
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
     },
     "./react": {
-      "import": {
-        "types": "./dist/types/react.d.ts",
-        "default": "./dist/react.mjs"
-      },
-      "require": {
-        "types": "./dist/types/react.d.cts",
-        "default": "./dist/react.cjs"
-      }
+      "types": "./dist/types/react.d.ts",
+      "import": "./dist/react.mjs",
+      "default": "./dist/react.mjs"
     },
     "./style.css": "./dist/maplibre-gl-raster.css"
   },
@@ -84,8 +74,12 @@
   },
   "peerDependencies": {
     "@deck.gl/core": "^9.3.2",
+    "@deck.gl/geo-layers": "^9.3.2",
+    "@deck.gl/layers": "^9.3.2",
     "@deck.gl/mapbox": "^9.3.2",
+    "@deck.gl/mesh-layers": "^9.3.2",
     "@luma.gl/core": "^9.3.3",
+    "@luma.gl/shadertools": "^9.3.3",
     "maplibre-gl": ">=3.0.0",
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
@@ -100,9 +94,13 @@
   },
   "devDependencies": {
     "@deck.gl/core": "^9.3.2",
+    "@deck.gl/geo-layers": "^9.3.2",
+    "@deck.gl/layers": "^9.3.2",
     "@deck.gl/mapbox": "^9.3.2",
+    "@deck.gl/mesh-layers": "^9.3.2",
     "@eslint/js": "^10.0.1",
     "@luma.gl/core": "^9.3.3",
+    "@luma.gl/shadertools": "^9.3.3",
     "@microsoft/api-extractor": "^7.58.7",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

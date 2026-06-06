@@ -150,6 +150,12 @@ export interface RasterControlReactProps extends RasterControlOptions {
    * Callback fired when the control state changes
    */
   onStateChange?: (state: RasterControlState) => void;
+
+  /**
+   * Callback fired once the control is added to the map, with the control
+   * instance — use it to call imperative methods like addRaster().
+   */
+  onReady?: (control: import('./RasterControl').RasterControl) => void;
 }
 
 /**

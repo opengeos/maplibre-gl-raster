@@ -21,8 +21,8 @@ import type { RasterControlReactProps } from "./types";
  *       {map && (
  *         <RasterControlReact
  *           map={map}
- *           title="My Control"
  *           collapsed={false}
+ *           onReady={(control) => control.addRaster('https://example.com/cog.tif')}
  *         />
  *       )}
  *     </>
@@ -36,6 +36,7 @@ import type { RasterControlReactProps } from "./types";
 export function RasterControlReact({
   map,
   onStateChange,
+  onReady,
   ...options
 }: RasterControlReactProps): null {
   const controlRef = useRef<RasterControl | null>(null);
@@ -56,6 +57,9 @@ export function RasterControlReact({
 
     // Add control to map
     map.addControl(control, options.position || "top-right");
+
+    // Hand the instance to the host for imperative calls (addRaster, etc.)
+    onReady?.(control);
 
     // Cleanup on unmount
     return () => {
