@@ -1,9 +1,9 @@
 import type { Map } from 'maplibre-gl';
 
 /**
- * Options for configuring the PluginControl
+ * Options for configuring the RasterControl
  */
-export interface PluginControlOptions {
+export interface RasterControlOptions {
   /**
    * Whether the control panel should start collapsed (showing only the toggle button)
    * @default true
@@ -18,13 +18,13 @@ export interface PluginControlOptions {
 
   /**
    * Title displayed in the control header
-   * @default 'Plugin Control'
+   * @default 'Raster'
    */
   title?: string;
 
   /**
    * Width of the control panel in pixels
-   * @default 300
+   * @default 340
    */
   panelWidth?: number;
 
@@ -37,7 +37,7 @@ export interface PluginControlOptions {
 /**
  * Internal state of the plugin control
  */
-export interface PluginState {
+export interface RasterControlState {
   /**
    * Whether the control panel is currently collapsed
    */
@@ -57,7 +57,7 @@ export interface PluginState {
 /**
  * Props for the React wrapper component
  */
-export interface PluginControlReactProps extends PluginControlOptions {
+export interface RasterControlReactProps extends RasterControlOptions {
   /**
    * MapLibre GL map instance
    */
@@ -66,15 +66,15 @@ export interface PluginControlReactProps extends PluginControlOptions {
   /**
    * Callback fired when the control state changes
    */
-  onStateChange?: (state: PluginState) => void;
+  onStateChange?: (state: RasterControlState) => void;
 }
 
 /**
  * Event types emitted by the plugin control
  */
-export type PluginControlEvent = 'collapse' | 'expand' | 'statechange';
+export type RasterControlEvent = 'collapse' | 'expand' | 'statechange';
 
 /**
  * Event handler function type
  */
-export type PluginControlEventHandler = (event: { type: PluginControlEvent; state: PluginState }) => void;
+export type RasterControlEventHandler = (event: { type: RasterControlEvent; state: RasterControlState }) => void;

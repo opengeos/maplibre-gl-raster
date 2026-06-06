@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains example implementations of the MapLibre GL Plugin Template.
+This directory contains example implementations of the MapLibre GL Raster plugin.
 
 ## Available Examples
 

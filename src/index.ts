@@ -1,15 +1,15 @@
 // Import styles
-import './lib/styles/plugin-control.css';
+import './lib/styles/raster-control.css';
 
 // Main entry point - Core exports
-export { PluginControl } from './lib/core/PluginControl';
+export { RasterControl } from './lib/core/RasterControl';
 
 // Type exports
 export type {
-  PluginControlOptions,
-  PluginState,
-  PluginControlEvent,
-  PluginControlEventHandler,
+  RasterControlOptions,
+  RasterControlState,
+  RasterControlEvent,
+  RasterControlEventHandler,
 } from './lib/core/types';
 
 // Utility exports

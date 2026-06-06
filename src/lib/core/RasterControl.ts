@@ -1,33 +1,33 @@
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl';
 import type {
-  PluginControlOptions,
-  PluginState,
-  PluginControlEvent,
-  PluginControlEventHandler,
+  RasterControlOptions,
+  RasterControlState,
+  RasterControlEvent,
+  RasterControlEventHandler,
 } from './types';
 
 /**
- * Default options for the PluginControl
+ * Default options for the RasterControl
  */
-const DEFAULT_OPTIONS: Required<PluginControlOptions> = {
+const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   collapsed: true,
   position: 'top-right',
-  title: 'Plugin Control',
-  panelWidth: 300,
+  title: 'Raster',
+  panelWidth: 340,
   className: '',
 };
 
 /**
  * Event handlers map type
  */
-type EventHandlersMap = globalThis.Map<PluginControlEvent, Set<PluginControlEventHandler>>;
+type EventHandlersMap = globalThis.Map<RasterControlEvent, Set<RasterControlEventHandler>>;
 
 /**
  * A template MapLibre GL control that can be customized for various plugin needs.
  *
  * @example
  * ```typescript
- * const control = new PluginControl({
+ * const control = new RasterControl({
  *   title: 'My Custom Control',
  *   collapsed: false,
  *   panelWidth: 320,
@@ -35,13 +35,13 @@ type EventHandlersMap = globalThis.Map<PluginControlEvent, Set<PluginControlEven
  * map.addControl(control, 'top-right');
  * ```
  */
-export class PluginControl implements IControl {
+export class RasterControl implements IControl {
   private _map?: MapLibreMap;
   private _mapContainer?: HTMLElement;
   private _container?: HTMLElement;
   private _panel?: HTMLElement;
-  private _options: Required<PluginControlOptions>;
-  private _state: PluginState;
+  private _options: Required<RasterControlOptions>;
+  private _state: RasterControlState;
   private _eventHandlers: EventHandlersMap = new globalThis.Map();
 
   // Panel positioning handlers
@@ -50,11 +50,11 @@ export class PluginControl implements IControl {
   private _clickOutsideHandler: ((e: MouseEvent) => void) | null = null;
 
   /**
-   * Creates a new PluginControl instance.
+   * Creates a new RasterControl instance.
    *
    * @param options - Configuration options for the control
    */
-  constructor(options?: Partial<PluginControlOptions>) {
+  constructor(options?: Partial<RasterControlOptions>) {
     this._options = { ...DEFAULT_OPTIONS, ...options };
     this._state = {
       collapsed: this._options.collapsed,
@@ -131,7 +131,7 @@ export class PluginControl implements IControl {
    *
    * @returns The current plugin state
    */
-  getState(): PluginState {
+  getState(): RasterControlState {
     return { ...this._state };
   }
 
@@ -140,7 +140,7 @@ export class PluginControl implements IControl {
    *
    * @param newState - Partial state to merge with current state
    */
-  setState(newState: Partial<PluginState>): void {
+  setState(newState: Partial<RasterControlState>): void {
     this._state = { ...this._state, ...newState };
     this._emit('statechange');
   }
@@ -189,7 +189,7 @@ export class PluginControl implements IControl {
    * @param event - The event type to listen for
    * @param handler - The callback function
    */
-  on(event: PluginControlEvent, handler: PluginControlEventHandler): void {
+  on(event: RasterControlEvent, handler: RasterControlEventHandler): void {
     if (!this._eventHandlers.has(event)) {
       this._eventHandlers.set(event, new Set());
     }
@@ -202,7 +202,7 @@ export class PluginControl implements IControl {
    * @param event - The event type
    * @param handler - The callback function to remove
    */
-  off(event: PluginControlEvent, handler: PluginControlEventHandler): void {
+  off(event: RasterControlEvent, handler: RasterControlEventHandler): void {
     this._eventHandlers.get(event)?.delete(handler);
   }
 
@@ -229,7 +229,7 @@ export class PluginControl implements IControl {
    *
    * @param event - The event type to emit
    */
-  private _emit(event: PluginControlEvent): void {
+  private _emit(event: RasterControlEvent): void {
     const handlers = this._eventHandlers.get(event);
     if (handlers) {
       const eventData = { type: event, state: this.getState() };

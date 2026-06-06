@@ -1,14 +1,14 @@
 // React entry point
-export { PluginControlReact } from './lib/core/PluginControlReact';
+export { RasterControlReact } from './lib/core/RasterControlReact';
 
 // React hooks
-export { usePluginState } from './lib/hooks';
+export { useRasterState } from './lib/hooks';
 
 // Re-export types for React consumers
 export type {
-  PluginControlOptions,
-  PluginState,
-  PluginControlReactProps,
-  PluginControlEvent,
-  PluginControlEventHandler,
+  RasterControlOptions,
+  RasterControlState,
+  RasterControlReactProps,
+  RasterControlEvent,
+  RasterControlEventHandler,
 } from './lib/core/types';
