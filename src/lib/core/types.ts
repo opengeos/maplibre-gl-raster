@@ -45,6 +45,14 @@ export type RasterLayerSource =
   | { kind: 'url'; url: string }
   | { kind: 'file'; fileName: string; objectUrl: string };
 
+/** Geographic (WGS84) bounds of a layer, as reported by COGLayer. */
+export type GeographicBounds = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};
+
 /**
  * Public, read-only snapshot of a raster layer.
  */
@@ -61,6 +69,13 @@ export interface RasterLayerInfo {
   bandNames: globalThis.Map<number, string> | null;
   /** Map style layer id the raster is inserted beneath, when set. */
   beforeId: string | null;
+  /** Geographic (WGS84) bounds, known once the raster renders. A
+   * 'rasterchange' event fires when they become available. */
+  bounds: GeographicBounds | null;
+  /** Whether the GeoTIFF header is still loading. */
+  loading: boolean;
+  /** Load error, when the GeoTIFF failed to load. */
+  error: Error | null;
   /** Current visualization state. */
   state: RasterLayerState;
 }

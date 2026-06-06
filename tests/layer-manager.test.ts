@@ -7,6 +7,7 @@ import {
   type LayerManagerEventData,
   type OverlayLike,
 } from '../src/lib/state/LayerManager';
+import { toLayerInfo } from '../src/lib/state/RasterLayer';
 import type { AutoStats } from '../src/lib/raster/stats';
 
 function makeFakeTiff(count = 3): GeoTIFF {
@@ -289,6 +290,66 @@ describe('LayerManager.destroy', () => {
     expect(abortSignal.aborted).toBe(true);
     expect(deps.removeOverlay).toHaveBeenCalledWith(map, overlay);
     expect(manager.getLayers()).toHaveLength(0);
+  });
+});
+
+describe('LayerManager bounds integration', () => {
+  const BOUNDS = { west: -10, south: -5, east: 10, north: 5 };
+
+  /** Pulls the onGeoTIFFLoad callback off the last COGLayer pushed to the
+   * overlay, as deck.gl would invoke it once the raster renders. */
+  function lastOnGeoTIFFLoad(setProps: ReturnType<typeof vi.fn>) {
+    const lastCall = setProps.mock.calls.at(-1)![0];
+    return lastCall.layers[0].props.onGeoTIFFLoad as (
+      tiff: GeoTIFF,
+      options: { geographicBounds: typeof BOUNDS },
+    ) => void;
+  }
+
+  it('stores bounds, fits the map, and emits rasterchange once', async () => {
+    const { manager, map, events, setProps } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif');
+    events.length = 0;
+
+    const onGeoTIFFLoad = lastOnGeoTIFFLoad(setProps);
+    onGeoTIFFLoad(makeFakeTiff(), { geographicBounds: BOUNDS });
+
+    expect(manager.getLayer(id)!.bounds).toEqual(BOUNDS);
+    expect(map.fitBounds).toHaveBeenCalledWith(
+      [
+        [BOUNDS.west, BOUNDS.south],
+        [BOUNDS.east, BOUNDS.north],
+      ],
+      expect.anything(),
+    );
+    expect(
+      events.filter((e) => e.type === 'rasterchange' && e.layerId === id),
+    ).toHaveLength(1);
+
+    // Later rebuilds re-fire onGeoTIFFLoad with the same GeoTIFF; that is
+    // not an observable change and must not re-emit (or re-zoom).
+    onGeoTIFFLoad(makeFakeTiff(), { geographicBounds: BOUNDS });
+    expect(
+      events.filter((e) => e.type === 'rasterchange' && e.layerId === id),
+    ).toHaveLength(1);
+    expect(map.fitBounds).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes bounds, loading, and error in toLayerInfo snapshots', async () => {
+    const { manager, setProps } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif');
+
+    let info = toLayerInfo(manager.getLayer(id)!);
+    expect(info.bounds).toBeNull();
+    expect(info.loading).toBe(false);
+    expect(info.error).toBeNull();
+
+    lastOnGeoTIFFLoad(setProps)(makeFakeTiff(), { geographicBounds: BOUNDS });
+    info = toLayerInfo(manager.getLayer(id)!);
+    expect(info.bounds).toEqual(BOUNDS);
+    // The snapshot owns its copy; mutating it must not touch the layer.
+    info.bounds!.west = -999;
+    expect(manager.getLayer(id)!.bounds).toEqual(BOUNDS);
   });
 });
 

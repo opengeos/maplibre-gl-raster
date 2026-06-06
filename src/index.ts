@@ -24,6 +24,7 @@ export { PALETTE_COLORMAP } from './lib/ui/ColormapPicker';
 // Type exports
 export type {
   AddRasterOptions,
+  GeographicBounds,
   RasterControlEvent,
   RasterControlEventData,
   RasterControlEventHandler,
