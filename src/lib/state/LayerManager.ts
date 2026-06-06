@@ -516,10 +516,18 @@ export class LayerManager {
     if (layer.state.mode === 'single') {
       if (layer.state.colormap === 'palette' && layer.palette) {
         if (!layer.paletteTexture && this._device) {
-          layer.paletteTexture = createColormapTexture(
-            this._device,
-            layer.palette,
-          );
+          try {
+            layer.paletteTexture = createColormapTexture(
+              this._device,
+              layer.palette,
+            );
+          } catch (err) {
+            // Drop the palette so we stop retrying and fall back to the
+            // named-colormap path on the next rebuild.
+            layer.palette = null;
+            const error = err instanceof Error ? err : new Error(String(err));
+            this._emit({ type: 'error', layerId: layer.id, error });
+          }
         }
         if (layer.paletteTexture) {
           return buildPaletteCompositeRenderTile(
