@@ -258,6 +258,7 @@ export class SettingsSection {
       const picker = new ColormapPicker({
         value: state.colormap,
         palette: layer.palette,
+        stats: statsForBand(layer.autoStats, state.bands[0] ?? 1),
         onChange: (name) => {
           this._setState({ colormap: name });
           // Switching to/from the palette shows/hides rescale-curve-gamma.
