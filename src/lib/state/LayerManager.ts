@@ -41,6 +41,36 @@ import {
 const FETCHED_BANDS = Array.from({ length: MAX_BAND_SLOTS }, (_, i) => i + 1);
 const getTileData = makeMultiBandTileLoader(FETCHED_BANDS);
 
+/** Uploads an embedded color table as a 2D-array texture for the Colormap
+ * shader module. Unlike `createColormapTexture` (which uses linear filtering
+ * for smooth continuous colormaps), palette lookups must be NEAREST-filtered:
+ * the shader samples at index/255, which lands between texel centers, and
+ * linear filtering would blend each class color with its neighbors — mostly
+ * unused black entries in typical land-cover palettes. */
+function createPaletteTexture(device: Device, palette: ImageData): Texture {
+  const bytes = new Uint8Array(
+    palette.data.buffer,
+    palette.data.byteOffset,
+    palette.data.byteLength,
+  );
+  return device.createTexture({
+    dimension: '2d-array',
+    format: 'rgba8unorm',
+    width: palette.width,
+    height: 1,
+    depth: 1,
+    data: bytes,
+    mipLevels: 1,
+    sampler: {
+      minFilter: 'nearest',
+      magFilter: 'nearest',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+      addressModeW: 'clamp-to-edge',
+    },
+  });
+}
+
 /** Parses the TIFF's embedded color table (ColorMap tag) into a 256x1 RGBA
  * ImageData, marking the declared nodata index transparent. Returns null
  * when the tag is absent or the palette isn't 8-bit (256 entries) — the GPU
@@ -517,7 +547,7 @@ export class LayerManager {
       if (layer.state.colormap === 'palette' && layer.palette) {
         if (!layer.paletteTexture && this._device) {
           try {
-            layer.paletteTexture = createColormapTexture(
+            layer.paletteTexture = createPaletteTexture(
               this._device,
               layer.palette,
             );
