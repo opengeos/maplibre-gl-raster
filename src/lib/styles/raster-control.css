@@ -118,6 +118,10 @@
      pixels past the content box; clip them instead of growing a horizontal
      scrollbar. */
   overflow-x: hidden;
+  /* Keep the vertical scrollbar off the controls: reserve its track space
+     and add a small gap so right edges stay fully visible while scrolling. */
+  scrollbar-gutter: stable;
+  padding-right: 6px;
 }
 
 .plugin-control-placeholder {
