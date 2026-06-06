@@ -100,7 +100,7 @@ export class RasterControl implements IControl {
     });
     this._forwardLayerManagerEvents(this._layerManager);
     const content = this._panel.querySelector<HTMLElement>(
-      '.plugin-control-content',
+      '.mlr-control-content',
     );
     const autoLoading = this._options.autoLoad && !!this._options.defaultUrl;
     if (content) {
@@ -411,17 +411,17 @@ export class RasterControl implements IControl {
    */
   private _createContainer(): HTMLElement {
     const container = document.createElement('div');
-    container.className = `maplibregl-ctrl maplibregl-ctrl-group plugin-control${
+    container.className = `maplibregl-ctrl maplibregl-ctrl-group mlr-control${
       this._options.className ? ` ${this._options.className}` : ''
     }`;
 
     // Create toggle button (29x29 to match navigation control)
     const toggleBtn = document.createElement('button');
-    toggleBtn.className = 'plugin-control-toggle';
+    toggleBtn.className = 'mlr-control-toggle';
     toggleBtn.type = 'button';
     toggleBtn.setAttribute('aria-label', this._options.title);
     toggleBtn.innerHTML = `
-      <span class="plugin-control-icon">
+      <span class="mlr-control-icon">
         <svg viewBox="0 0 24 24" width="22" height="22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
           <circle cx="8.5" cy="8.5" r="1.5"/>
@@ -444,19 +444,19 @@ export class RasterControl implements IControl {
    */
   private _createPanel(): HTMLElement {
     const panel = document.createElement('div');
-    panel.className = 'plugin-control-panel';
+    panel.className = 'mlr-control-panel';
     panel.style.width = `${this._options.panelWidth}px`;
 
     // Create header with title and close button
     const header = document.createElement('div');
-    header.className = 'plugin-control-header';
+    header.className = 'mlr-control-header';
 
     const title = document.createElement('span');
-    title.className = 'plugin-control-title';
+    title.className = 'mlr-control-title';
     title.textContent = this._options.title;
 
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'plugin-control-close';
+    closeBtn.className = 'mlr-control-close';
     closeBtn.type = 'button';
     closeBtn.setAttribute('aria-label', 'Close panel');
     closeBtn.innerHTML = '&times;';
@@ -467,7 +467,7 @@ export class RasterControl implements IControl {
 
     // Content area — populated by PanelUI in onAdd.
     const content = document.createElement('div');
-    content.className = 'plugin-control-content';
+    content.className = 'mlr-control-content';
 
     panel.appendChild(header);
     panel.appendChild(content);
@@ -539,7 +539,7 @@ export class RasterControl implements IControl {
     if (!this._container || !this._panel || !this._mapContainer) return;
 
     // Get the toggle button (first child of container)
-    const button = this._container.querySelector('.plugin-control-toggle');
+    const button = this._container.querySelector('.mlr-control-toggle');
     if (!button) return;
 
     const buttonRect = button.getBoundingClientRect();
