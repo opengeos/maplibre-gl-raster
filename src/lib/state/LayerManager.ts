@@ -4,13 +4,14 @@ import {
   createColormapTexture,
   decodeColormapSprite,
 } from '@developmentseed/deck.gl-raster/gpu-modules';
-import type { GeoTIFF } from '@developmentseed/geotiff';
+import { parseColormap, type GeoTIFF } from '@developmentseed/geotiff';
 import type { Device, Texture } from '@luma.gl/core';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { AddRasterOptions, RasterLayerState } from '../core/types';
 import { colormapsPngUrl } from '../raster/colormaps';
 import { loadGeoTIFF as defaultLoadGeoTIFF } from '../raster/load-geotiff';
 import {
+  buildPaletteCompositeRenderTile,
   buildRgbCompositeRenderTile,
   buildSingleCompositeRenderTile,
 } from '../raster/render-pipeline';
@@ -39,6 +40,25 @@ import {
 // share one loader that always fetches the first up-to-4 bands.
 const FETCHED_BANDS = Array.from({ length: MAX_BAND_SLOTS }, (_, i) => i + 1);
 const getTileData = makeMultiBandTileLoader(FETCHED_BANDS);
+
+/** Parses the TIFF's embedded color table (ColorMap tag) into a 256x1 RGBA
+ * ImageData, marking the declared nodata index transparent. Returns null
+ * when the tag is absent or the palette isn't 8-bit (256 entries) — the GPU
+ * colormap texture path only supports 256-texel tables. */
+function extractPalette(tiff: GeoTIFF): ImageData | null {
+  const cmap = tiff.cachedTags?.colorMap;
+  if (!cmap || cmap.length !== 256 * 3) return null;
+  const nodata = tiff.nodata;
+  const nodataIndex =
+    nodata !== null && Number.isInteger(nodata) && nodata >= 0 && nodata < 256
+      ? nodata
+      : undefined;
+  try {
+    return parseColormap(cmap, nodataIndex);
+  } catch {
+    return null;
+  }
+}
 
 /** Events emitted by the LayerManager. */
 export type LayerManagerEvent =
@@ -191,6 +211,8 @@ export class LayerManager {
       autoStats: null,
       bandCount: null,
       bandNames: null,
+      palette: null,
+      paletteTexture: null,
       bounds: null,
       zoomTo: options?.zoomTo ?? true,
       loading: true,
@@ -209,6 +231,7 @@ export class LayerManager {
       layer.geotiff = tiff;
       layer.bandCount = tiff.count;
       layer.bandNames = readBandNames(tiff);
+      layer.palette = extractPalette(tiff);
       layer.loading = false;
       if (!layer.userPickedMode) {
         // 1 or 2 bands → single + colormap. RGB on 2 bands leaves blue empty.
@@ -218,6 +241,9 @@ export class LayerManager {
         } else {
           layer.state.mode = 'single';
           layer.state.bands = [1];
+          // Prefer the image's embedded color table when it carries one;
+          // otherwise the 'gray' default from DEFAULT_LAYER_STATE applies.
+          if (layer.palette) layer.state.colormap = 'palette';
         }
       }
       this._rebuild();
@@ -250,6 +276,7 @@ export class LayerManager {
     if (layer.source.kind === 'file') {
       URL.revokeObjectURL(layer.source.objectUrl);
     }
+    this._destroyPaletteTexture(layer);
     if (this._selectedId === id) {
       this.select(this._layers[this._layers.length - 1]?.id ?? null);
     }
@@ -357,6 +384,7 @@ export class LayerManager {
       if (layer.source.kind === 'file') {
         URL.revokeObjectURL(layer.source.objectUrl);
       }
+      this._destroyPaletteTexture(layer);
     }
     this._layers = [];
     this._selectedId = null;
@@ -365,6 +393,16 @@ export class LayerManager {
       this._overlay = null;
     }
     this._handlers.clear();
+  }
+
+  private _destroyPaletteTexture(layer: RasterLayer): void {
+    if (!layer.paletteTexture) return;
+    try {
+      layer.paletteTexture.destroy();
+    } catch {
+      // best-effort
+    }
+    layer.paletteTexture = null;
   }
 
   private _emit(data: Omit<LayerManagerEventData, 'type'> & { type: LayerManagerEvent }): void {
@@ -450,14 +488,7 @@ export class LayerManager {
   }
 
   private _buildCogLayer(layer: RasterLayer): COGLayer<MultiBandTileData> {
-    const renderTile =
-      layer.state.mode === 'single' && this._colormapTexture
-        ? buildSingleCompositeRenderTile(
-            layer.state,
-            this._colormapTexture,
-            layer.autoStats,
-          )
-        : buildRgbCompositeRenderTile(layer.state, layer.autoStats);
+    const renderTile = this._renderTileFor(layer);
 
     return new COGLayer({
       id: layer.id,
@@ -476,5 +507,34 @@ export class LayerManager {
         }
       },
     });
+  }
+
+  /** Picks the render pipeline for a layer: embedded palette lookup, named
+   * colormap, or RGB compositing. GPU-texture-dependent paths fall back to
+   * RGB until the device / textures are ready. */
+  private _renderTileFor(layer: RasterLayer) {
+    if (layer.state.mode === 'single') {
+      if (layer.state.colormap === 'palette' && layer.palette) {
+        if (!layer.paletteTexture && this._device) {
+          layer.paletteTexture = createColormapTexture(
+            this._device,
+            layer.palette,
+          );
+        }
+        if (layer.paletteTexture) {
+          return buildPaletteCompositeRenderTile(
+            layer.state,
+            layer.paletteTexture,
+          );
+        }
+      } else if (this._colormapTexture) {
+        return buildSingleCompositeRenderTile(
+          layer.state,
+          this._colormapTexture,
+          layer.autoStats,
+        );
+      }
+    }
+    return buildRgbCompositeRenderTile(layer.state, layer.autoStats);
   }
 }

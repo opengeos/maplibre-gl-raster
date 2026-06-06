@@ -25,7 +25,8 @@ export interface RasterLayerState {
   /** Per-channel [min, max] rescale windows; null = auto (2-98% percentile
    * from computed stats). */
   rescale: [number, number][] | null;
-  /** Colormap name (single-band mode only). */
+  /** Colormap name (single-band mode only). 'palette' uses the image's
+   * embedded color table; defaults to 'gray'. */
   colormap: string;
   /** Nodata handling. */
   nodata: RasterNodata;

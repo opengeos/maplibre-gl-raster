@@ -154,7 +154,8 @@ function pickBand(
 
 type RenderTileMode =
   | { kind: 'rgb' }
-  | { kind: 'single'; colormapTexture: Texture; colormapIndex: number };
+  | { kind: 'single'; colormapTexture: Texture; colormapIndex: number }
+  | { kind: 'palette'; colormapTexture: Texture };
 
 /** Resolve the CompositeBands {r,g,b} mapping. RGB picks each requested
  * band independently (g/b optional — falls back to r); single-band
@@ -166,7 +167,7 @@ function pickMapping(
   requested: number[],
   mode: RenderTileMode['kind'],
 ): { r: string; g?: string; b?: string } | null {
-  if (mode === 'single') {
+  if (mode === 'single' || mode === 'palette') {
     const band = pickBand(data, requested[0]);
     return band ? { r: band, g: band, b: band } : null;
   }
@@ -193,9 +194,9 @@ function buildRenderTile(
   return function renderTile(data: MultiBandTileData): RenderTileResult {
     if (data.bands.size === 0) return { renderPipeline: [] };
     const requested =
-      mode.kind === 'single'
-        ? [state.bands?.[0] ?? 1]
-        : (state.bands ?? [1, 2, 3]);
+      mode.kind === 'rgb'
+        ? (state.bands ?? [1, 2, 3])
+        : [state.bands?.[0] ?? 1];
     const mapping = pickMapping(data, requested, mode.kind);
     if (!mapping) return { renderPipeline: [] };
 
@@ -227,6 +228,30 @@ function buildRenderTile(
     const filterNaNAlreadyPushed = explicitNodataModule?.module === FilterNaN;
     if (isFloatTexture && state.nodata !== 'off' && !filterNaNAlreadyPushed) {
       pipeline.push({ module: FilterNaN });
+    }
+
+    if (mode.kind === 'palette') {
+      // Palette indices are categorical: skip the user rescale / stretch /
+      // gamma chain and map index 0..255 onto the 256-texel color table.
+      // For r8unorm textures (sampleScale 255) this rescale is the identity;
+      // for float-uploaded data it normalizes the raw index into [0, 1].
+      const max = 255 / data.sampleScale;
+      pipeline.push({
+        module: PerBandLinearRescale,
+        props: {
+          rescaleMin: [0, 0, 0],
+          rescaleMax: [max, max, max],
+        },
+      });
+      pipeline.push({
+        module: Colormap,
+        props: {
+          colormapTexture: mode.colormapTexture,
+          colormapIndex: 0,
+          reversed: false,
+        },
+      });
+      return { renderPipeline: pipeline };
     }
 
     const rescale = effectiveRescale(state, autoStats, requested);
@@ -283,12 +308,25 @@ export function buildSingleCompositeRenderTile(
   colormapTexture: Texture,
   autoStats: AutoStats | null,
 ) {
-  const name = (state.colormap ?? 'viridis').toLowerCase();
+  const name = (state.colormap ?? 'gray').toLowerCase();
   const colormapIndex =
-    (COLORMAP_INDEX as Record<string, number>)[name] ?? COLORMAP_INDEX.viridis;
+    (COLORMAP_INDEX as Record<string, number>)[name] ?? COLORMAP_INDEX.gray;
   return buildRenderTile(state, autoStats, {
     kind: 'single',
     colormapTexture,
     colormapIndex,
+  });
+}
+
+/** Palette renderTile: looks the band's raw index values up in the image's
+ * embedded color table (a 256x1 2D-array texture). Rescale / stretch / gamma
+ * are skipped — palette indices are categorical. */
+export function buildPaletteCompositeRenderTile(
+  state: RasterLayerState,
+  paletteTexture: Texture,
+) {
+  return buildRenderTile(state, null, {
+    kind: 'palette',
+    colormapTexture: paletteTexture,
   });
 }
