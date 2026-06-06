@@ -118,11 +118,19 @@ export interface RasterControlOptions {
   interleaved?: boolean;
 
   /**
-   * Prefills the "Add data" URL input with this COG URL. The raster is NOT
-   * loaded automatically — the user still clicks Load.
+   * Prefills the "Add data" URL input with this COG URL. The raster is only
+   * loaded automatically when {@link autoLoad} is true; otherwise the user
+   * still clicks Load.
    * @default ''
    */
   defaultUrl?: string;
+
+  /**
+   * When true and {@link defaultUrl} is set, the raster is loaded as soon as
+   * the control is added to the map (instead of prefilling the URL input).
+   * @default false
+   */
+  autoLoad?: boolean;
 }
 
 /**

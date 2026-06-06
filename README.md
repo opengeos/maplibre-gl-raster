@@ -111,6 +111,7 @@ The main control class implementing MapLibre's `IControl` interface.
 | `className`   | `string`  | `''`          | Custom CSS class name                                                     |
 | `interleaved` | `boolean` | `true`        | Render the deck.gl overlay interleaved with the basemap layers            |
 | `defaultUrl`  | `string`  | `''`          | Prefills the Add data URL input (not loaded until the user clicks Load)  |
+| `autoLoad`    | `boolean` | `false`       | Load `defaultUrl` automatically when the control is added to the map     |
 
 #### Raster Methods
 

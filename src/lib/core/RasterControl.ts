@@ -23,6 +23,7 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   className: '',
   interleaved: true,
   defaultUrl: '',
+  autoLoad: false,
 };
 
 /**
@@ -101,10 +102,17 @@ export class RasterControl implements IControl {
     const content = this._panel.querySelector<HTMLElement>(
       '.plugin-control-content',
     );
+    const autoLoading = this._options.autoLoad && !!this._options.defaultUrl;
     if (content) {
       this._panelUI = new PanelUI(content, this._layerManager, {
-        defaultUrl: this._options.defaultUrl,
+        // When auto-loading, leave the input empty — the raster is already
+        // on its way, and a prefilled Load button would just add a duplicate.
+        defaultUrl: autoLoading ? '' : this._options.defaultUrl,
       });
+    }
+    if (autoLoading) {
+      // Errors surface via the 'error' event and the layer row.
+      void this._layerManager.addRaster(this._options.defaultUrl).catch(() => {});
     }
 
     // Flush addRaster calls made before the control was added to a map.
