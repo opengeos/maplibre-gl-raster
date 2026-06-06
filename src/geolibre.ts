@@ -38,7 +38,7 @@ let pendingState: Partial<RasterControlState> | null = null;
 function createControl(): RasterControl {
   const nextControl = new RasterControl({
     collapsed: pendingState?.collapsed ?? true,
-    panelWidth: pendingState?.panelWidth ?? 340,
+    panelWidth: pendingState?.panelWidth ?? 360,
     title: "MapLibre GL Raster",
   });
 

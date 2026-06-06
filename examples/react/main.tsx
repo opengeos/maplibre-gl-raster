@@ -92,7 +92,7 @@ function App() {
         <RasterControlReact
           map={map}
           collapsed={state.collapsed}
-          panelWidth={340}
+          panelWidth={360}
           onStateChange={handleStateChange}
           onReady={handleReady}
         />

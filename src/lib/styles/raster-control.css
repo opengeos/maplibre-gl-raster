@@ -114,6 +114,10 @@
 .plugin-control-content {
   max-height: min(72vh, 660px);
   overflow-y: auto;
+  /* Histogram drag handles are centered on the chart edges and poke a few
+     pixels past the content box; clip them instead of growing a horizontal
+     scrollbar. */
+  overflow-x: hidden;
 }
 
 .plugin-control-placeholder {

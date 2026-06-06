@@ -6,7 +6,7 @@ import type { RasterControlState } from '../core/types';
  */
 const DEFAULT_STATE: RasterControlState = {
   collapsed: true,
-  panelWidth: 340,
+  panelWidth: 360,
   data: {},
 };
 

@@ -101,7 +101,7 @@ export interface RasterControlOptions {
 
   /**
    * Width of the control panel in pixels
-   * @default 340
+   * @default 360
    */
   panelWidth?: number;
 

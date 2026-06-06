@@ -107,7 +107,7 @@ The main control class implementing MapLibre's `IControl` interface.
 | `collapsed`   | `boolean` | `true`        | Whether the panel starts collapsed (showing only the 29x29 toggle button) |
 | `position`    | `string`  | `'top-right'` | Control position on the map                                               |
 | `title`       | `string`  | `'Raster'`    | Title displayed in the header                                             |
-| `panelWidth`  | `number`  | `340`         | Width of the dropdown panel in pixels                                     |
+| `panelWidth`  | `number`  | `360`         | Width of the dropdown panel in pixels                                     |
 | `className`   | `string`  | `''`          | Custom CSS class name                                                     |
 | `interleaved` | `boolean` | `true`        | Render the deck.gl overlay interleaved with the basemap layers            |
 
