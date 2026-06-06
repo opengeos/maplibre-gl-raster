@@ -15,6 +15,7 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   title: 'Raster',
   panelWidth: 340,
   className: '',
+  interleaved: true,
 };
 
 /**
