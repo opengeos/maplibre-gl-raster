@@ -292,6 +292,21 @@
   color: #555;
 }
 
+/* Collapsible field (e.g. Rescale) */
+.mlr-collapsible > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style-position: inside;
+}
+
+.mlr-collapsible > summary:hover {
+  color: #333;
+}
+
+.mlr-collapsible[open] > summary {
+  margin-bottom: 4px;
+}
+
 .mlr-input {
   width: 100%;
   box-sizing: border-box;

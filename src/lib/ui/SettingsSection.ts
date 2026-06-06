@@ -159,6 +159,9 @@ export class SettingsSection {
   private _applying = false;
   private _dragCount = 0;
   private _dirty = false;
+  /** Collapsed/expanded state of the Rescale section, preserved across the
+   * full re-renders this section performs on every structural change. */
+  private _rescaleOpen = true;
 
   /**
    * Creates the section.
@@ -421,7 +424,20 @@ export class SettingsSection {
       wrap.appendChild(presetRow);
     }
 
-    return field('Rescale', wrap, HELP.rescale);
+    // Collapsible: histograms are tall, and users often only need them while
+    // tuning. The open state persists across re-renders.
+    const details = el('details', { className: 'mlr-field mlr-collapsible' });
+    const summary = el('summary', {
+      className: 'mlr-field-label',
+      text: 'Rescale',
+      title: HELP.rescale,
+    });
+    details.append(summary, wrap);
+    details.open = this._rescaleOpen;
+    details.addEventListener('toggle', () => {
+      this._rescaleOpen = details.open;
+    });
+    return details;
   }
 
   private _buildNodataField(state: RasterLayerState): HTMLElement {
