@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -9,14 +9,20 @@ const CRC_TABLE = createCrcTable();
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const outputPath = join(bundleDir, `${manifest.id}-${manifest.version}.zip`);
 
+// Include every file under dist/ — the entry bundle dynamically imports
+// sibling chunks (raster decoders, web workers) that must ship alongside it.
+const distDir = join(bundleDir, "dist");
+const distFiles = (await readdir(distDir, { recursive: true, withFileTypes: true }))
+  .filter((entry) => entry.isFile())
+  .map((entry) => join(entry.parentPath, entry.name));
+
 const entries = [
   ["plugin.json", manifestPath],
-  [manifest.entry, join(bundleDir, manifest.entry)],
+  ...distFiles.map((path) => [
+    `dist/${relative(distDir, path).split(sep).join("/")}`,
+    path,
+  ]),
 ];
-
-if (manifest.style) {
-  entries.push([manifest.style, join(bundleDir, manifest.style)]);
-}
 
 await mkdir(bundleDir, { recursive: true });
 await writeFile(outputPath, await createZip(entries));

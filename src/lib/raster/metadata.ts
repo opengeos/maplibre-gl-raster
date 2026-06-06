@@ -175,7 +175,7 @@ export function planarConfigLabel(code: number | null | undefined): string {
 }
 
 /** Parse every `<Item>` under `<GDALMetadata>`. Returns `[]` on missing,
- * empty, or unparseable input. The `sample` attribute is normalized to a
+ * empty, or unparsable input. The `sample` attribute is normalized to a
  * 1-based number to match GDAL's external convention; absent → null. */
 export function parseGdalItems(raw: string | null | undefined): GdalItem[] {
   if (typeof raw !== 'string' || raw.length === 0) return [];

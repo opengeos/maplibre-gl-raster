@@ -471,6 +471,10 @@ export class RasterControl implements IControl {
     // Click outside to close (check both container and panel since they're now separate)
     this._clickOutsideHandler = (e: MouseEvent) => {
       const target = e.target as Node;
+      // Ignore clicks whose target was detached mid-event (e.g. a panel
+      // button whose click handler re-rendered the settings UI) — contains()
+      // would report false and wrongly collapse the panel.
+      if (!target.isConnected) return;
       if (
         this._container &&
         this._panel &&
