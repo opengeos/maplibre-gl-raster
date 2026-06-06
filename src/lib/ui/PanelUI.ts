@@ -32,12 +32,12 @@ export class PanelUI {
 
     const addData = new AddDataSection({
       initialUrl: options?.defaultUrl,
-      onAddUrl: (url) => {
+      onAddUrl: (url, beforeId) => {
         // Errors surface via the manager's 'error' event and the layer row.
-        void this._manager.addRaster(url).catch(() => {});
+        void this._manager.addRaster(url, { beforeId }).catch(() => {});
       },
-      onAddFile: (file) => {
-        void this._manager.addRaster(file).catch(() => {});
+      onAddFile: (file, beforeId) => {
+        void this._manager.addRaster(file, { beforeId }).catch(() => {});
       },
     });
 

@@ -41,6 +41,36 @@ import {
 const FETCHED_BANDS = Array.from({ length: MAX_BAND_SLOTS }, (_, i) => i + 1);
 const getTileData = makeMultiBandTileLoader(FETCHED_BANDS);
 
+/** Uploads an embedded color table as a 2D-array texture for the Colormap
+ * shader module. Unlike `createColormapTexture` (which uses linear filtering
+ * for smooth continuous colormaps), palette lookups must be NEAREST-filtered:
+ * the shader samples at index/255, which lands between texel centers, and
+ * linear filtering would blend each class color with its neighbors — mostly
+ * unused black entries in typical land-cover palettes. */
+function createPaletteTexture(device: Device, palette: ImageData): Texture {
+  const bytes = new Uint8Array(
+    palette.data.buffer,
+    palette.data.byteOffset,
+    palette.data.byteLength,
+  );
+  return device.createTexture({
+    dimension: '2d-array',
+    format: 'rgba8unorm',
+    width: palette.width,
+    height: 1,
+    depth: 1,
+    data: bytes,
+    mipLevels: 1,
+    sampler: {
+      minFilter: 'nearest',
+      magFilter: 'nearest',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+      addressModeW: 'clamp-to-edge',
+    },
+  });
+}
+
 /** Parses the TIFF's embedded color table (ColorMap tag) into a 256x1 RGBA
  * ImageData, marking the declared nodata index transparent. Returns null
  * when the tag is absent or the palette isn't 8-bit (256 entries) — the GPU
@@ -213,6 +243,7 @@ export class LayerManager {
       bandNames: null,
       palette: null,
       paletteTexture: null,
+      beforeId: options?.beforeId?.trim() || null,
       bounds: null,
       zoomTo: options?.zoomTo ?? true,
       loading: true,
@@ -490,12 +521,18 @@ export class LayerManager {
   private _buildCogLayer(layer: RasterLayer): COGLayer<MultiBandTileData> {
     const renderTile = this._renderTileFor(layer);
 
-    return new COGLayer({
+    // beforeId is read by @deck.gl/mapbox's MapboxOverlay in interleaved
+    // mode but missing from COGLayer's narrower props type — build the props
+    // as a const so structural assignability applies instead of the
+    // excess-property check. Only forward ids that exist in the current
+    // style; a stale id would make the overlay throw on the next style event.
+    const cogProps = {
       id: layer.id,
       geotiff: layer.geotiff!,
       opacity: layer.state.opacity,
       getTileData,
       renderTile,
+      beforeId: this._resolveBeforeId(layer.beforeId),
       onGeoTIFFLoad: (
         _tiff: GeoTIFF,
         options: { geographicBounds: GeographicBounds },
@@ -506,7 +543,23 @@ export class LayerManager {
           this._fitBounds(layer.bounds);
         }
       },
-    });
+    };
+    return new COGLayer(cogProps);
+  }
+
+  /** Returns the beforeId only when that layer exists in the map's current
+   * style (warns otherwise). */
+  private _resolveBeforeId(beforeId: string | null): string | undefined {
+    if (!beforeId) return undefined;
+    try {
+      if (this._map.getLayer(beforeId)) return beforeId;
+    } catch {
+      return undefined;
+    }
+    console.warn(
+      `maplibre-gl-raster: beforeId layer "${beforeId}" not found in the map style; drawing the raster on top.`,
+    );
+    return undefined;
   }
 
   /** Picks the render pipeline for a layer: embedded palette lookup, named
@@ -517,7 +570,7 @@ export class LayerManager {
       if (layer.state.colormap === 'palette' && layer.palette) {
         if (!layer.paletteTexture && this._device) {
           try {
-            layer.paletteTexture = createColormapTexture(
+            layer.paletteTexture = createPaletteTexture(
               this._device,
               layer.palette,
             );

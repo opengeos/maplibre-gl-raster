@@ -49,7 +49,14 @@ export class BandHistogram {
    * @param options - Colors, sizing, and change callbacks
    */
   constructor(options: BandHistogramOptions) {
-    this._opts = { color: 'rgb(31, 42, 55)', height: 64, ...options };
+    // The default is a CSS variable so the neutral single-band histogram
+    // follows the light/dark theme; colors are applied via style properties
+    // (not SVG presentation attributes) because var() only resolves in CSS.
+    this._opts = {
+      color: 'var(--mlr-histogram-neutral)',
+      height: 64,
+      ...options,
+    };
     const height = this._opts.height;
 
     this._svg = svgEl('svg', {
@@ -62,14 +69,15 @@ export class BandHistogram {
 
     const bg = svgEl('rect', { width: 100, height, class: 'mlr-histogram-bg' });
     this._barsGroup = svgEl('g');
+    this._barsGroup.style.fill = this._opts.color;
     this._selectionRect = svgEl('rect', {
       x: 0,
       y: 0,
       width: 0,
       height,
-      fill: this._opts.color,
       opacity: 0.12,
     });
+    this._selectionRect.style.fill = this._opts.color;
     this._svg.append(bg, this._barsGroup, this._selectionRect);
 
     this._loHandle = this._makeHandle('lo');
@@ -227,7 +235,6 @@ export class BandHistogram {
           y: height - h,
           width: w,
           height: h,
-          fill: this._opts.color,
           opacity: 0.55,
         }),
       );

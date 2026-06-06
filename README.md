@@ -124,7 +124,7 @@ The main control class implementing MapLibre's `IControl` interface.
 - `zoomToRaster(id)` - Fit the map to a layer's bounds
 - `reorderRaster(id, toIndex)` - Move a layer in the draw order (0 = bottom)
 
-`addRaster` options (`AddRasterOptions`): `id`, `name`, `state` (initial `Partial<RasterLayerState>` overrides), `zoomTo` (default `true`).
+`addRaster` options (`AddRasterOptions`): `id`, `name`, `state` (initial `Partial<RasterLayerState>` overrides), `zoomTo` (default `true`), and `beforeId` (insert the raster beneath an existing style layer, e.g. a label layer; also available as an input in the panel's Add data section).
 
 #### Panel Methods
 
@@ -355,7 +355,7 @@ Set up Trusted Publisher on npmjs.com
 
 ## Credits
 
-The rendering pipeline, GeoTIFF loading strategy, statistics sampling, and much of the visualization UX are ported from [Development Seed](https://developmentseed.org/)'s [cog-viewer](https://github.com/developmentseed/cog-viewer), built on their excellent [@developmentseed/deck.gl-geotiff](https://github.com/developmentseed/deck.gl-raster) and [@developmentseed/deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) libraries.
+The rendering pipeline, GeoTIFF loading strategy, statistics sampling, and much of the visualization UX are ported from Source Cooperative's [cog-viewer](https://github.com/source-cooperative/cog-viewer), built on their excellent [@developmentseed/deck.gl-geotiff](https://github.com/developmentseed/deck.gl-raster) and [@developmentseed/deck.gl-raster](https://github.com/developmentseed/deck.gl-raster) libraries.
 
 ## License
 

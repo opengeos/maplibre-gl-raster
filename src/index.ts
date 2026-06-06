@@ -9,14 +9,17 @@ export { loadGeoTIFF } from './lib/raster/load-geotiff';
 export { summarizeGeoTIFF } from './lib/raster/metadata';
 export {
   computeAutoStats,
+  MAX_SAMPLE_TILES,
   percentileFromHistogram,
   readBandNames,
 } from './lib/raster/stats';
 export {
   COLORMAP_NAMES,
   COLORMAP_OPTIONS,
+  COLORMAP_ROW_COUNT,
   colormapsPngUrl,
 } from './lib/raster/colormaps';
+export { PALETTE_COLORMAP } from './lib/ui/ColormapPicker';
 
 // Type exports
 export type {
@@ -33,8 +36,16 @@ export type {
   RasterNodata,
   RasterStretch,
 } from './lib/core/types';
-export type { MetadataSummary } from './lib/raster/metadata';
+export type {
+  BandSummary,
+  CrsSummary,
+  GdalItem,
+  ImageSummary,
+  MetadataSummary,
+  OverviewSummary,
+} from './lib/raster/metadata';
 export type { AutoStats, BandStats } from './lib/raster/stats';
+export type { ColormapOption } from './lib/raster/colormaps';
 
 // Utility exports
 export {

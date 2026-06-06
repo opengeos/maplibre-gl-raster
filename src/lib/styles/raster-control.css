@@ -1,15 +1,80 @@
 /**
  * MapLibre GL Raster Control Styles
  *
- * This stylesheet provides the base styles for the plugin control.
- * Customize these styles to match your plugin's design.
+ * All colors flow through the --mlr-* custom properties below; the dark
+ * theme only swaps the variable values (and the native widget color-scheme),
+ * following the user's prefers-color-scheme setting automatically.
  */
 
-/* Container - matches maplibregl-ctrl styling */
-.plugin-control {
-  background: #fff;
+.plugin-control,
+.plugin-control-panel {
+  --mlr-bg: #fff;
+  --mlr-surface-muted: #f1f3f5;
+  --mlr-surface-soft: #f7f8f9;
+  --mlr-text: #333;
+  --mlr-text-strong: #1f2a37;
+  --mlr-text-soft: #555;
+  --mlr-text-muted: #777;
+  --mlr-text-faint: #999;
+  --mlr-border: #ddd;
+  --mlr-border-soft: #e0e0e0;
+  --mlr-border-faint: #eee;
+  --mlr-border-strong: #c4c9d0;
+  --mlr-accent: #4a90d9;
+  --mlr-accent-strong: #3a7bc8;
+  --mlr-accent-soft: rgba(74, 144, 217, 0.12);
+  --mlr-hover: rgba(0, 0, 0, 0.05);
+  --mlr-error: #c0392b;
+  --mlr-disabled-bg: #ccc;
+  --mlr-disabled-text: #ccc;
+  --mlr-scrollbar: #ccc;
+  --mlr-scrollbar-hover: #aaa;
+  --mlr-shadow: rgba(0, 0, 0, 0.1);
+  --mlr-histogram-neutral: #1f2a37;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  .plugin-control,
+  .plugin-control-panel {
+    --mlr-bg: #23282e;
+    --mlr-surface-muted: #2e343b;
+    --mlr-surface-soft: #2a3036;
+    --mlr-text: #e3e6e9;
+    --mlr-text-strong: #f0f2f4;
+    --mlr-text-soft: #c4cad0;
+    --mlr-text-muted: #9aa3ab;
+    --mlr-text-faint: #828b93;
+    --mlr-border: #454d55;
+    --mlr-border-soft: #3a4148;
+    --mlr-border-faint: #343b42;
+    --mlr-border-strong: #525a63;
+    --mlr-accent: #5b9ce0;
+    --mlr-accent-strong: #6faae6;
+    --mlr-accent-soft: rgba(91, 156, 224, 0.2);
+    --mlr-hover: rgba(255, 255, 255, 0.08);
+    --mlr-error: #e07b6e;
+    --mlr-disabled-bg: #4a5158;
+    --mlr-disabled-text: #5f666d;
+    --mlr-scrollbar: #4a5158;
+    --mlr-scrollbar-hover: #5f666d;
+    --mlr-shadow: rgba(0, 0, 0, 0.35);
+    --mlr-histogram-neutral: #cfd6dd;
+
+    color-scheme: dark;
+  }
+}
+
+/* Container - matches maplibregl-ctrl styling. The doubled selector
+   outranks maplibre-gl's `.maplibregl-ctrl-group { background: #fff }`
+   regardless of stylesheet order, so the button follows the theme (a white
+   button with a light icon has no contrast in dark mode). */
+.plugin-control,
+.maplibregl-ctrl.plugin-control {
+  background: var(--mlr-bg);
   border-radius: 4px;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 0 0 2px var(--mlr-shadow);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -25,11 +90,11 @@
   justify-content: center;
   cursor: pointer;
   outline: none;
-  color: #1f2a37;
+  color: var(--mlr-text-strong);
 }
 
 .plugin-control-toggle:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--mlr-hover);
 }
 
 .plugin-control-toggle .plugin-control-icon {
@@ -54,9 +119,9 @@
 .plugin-control-panel {
   position: absolute;
   /* Position is set dynamically by _updatePanelPosition() */
-  background: #fff;
+  background: var(--mlr-bg);
   border-radius: 4px;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 0 0 2px var(--mlr-shadow);
   min-width: 240px;
   max-width: 420px;
   max-height: min(80vh, 720px);
@@ -79,9 +144,9 @@
   justify-content: space-between;
   gap: 10px;
   font-weight: 600;
-  color: #333;
+  color: var(--mlr-text);
   padding: 4px 0 8px 0;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--mlr-border-soft);
   margin-bottom: 8px;
 }
 
@@ -95,7 +160,7 @@
   height: 20px;
   border: none;
   background: transparent;
-  color: #999;
+  color: var(--mlr-text-faint);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -107,7 +172,7 @@
 }
 
 .plugin-control-close:hover {
-  color: #333;
+  color: var(--mlr-text);
 }
 
 /* Content */
@@ -126,7 +191,7 @@
 
 .plugin-control-placeholder {
   margin: 0;
-  color: #888;
+  color: var(--mlr-text-muted);
   font-size: 12px;
   text-align: center;
   padding: 16px 0;
@@ -142,12 +207,12 @@
 }
 
 .plugin-control-content::-webkit-scrollbar-thumb {
-  background: #ccc;
+  background: var(--mlr-scrollbar);
   border-radius: 3px;
 }
 
 .plugin-control-content::-webkit-scrollbar-thumb:hover {
-  background: #aaa;
+  background: var(--mlr-scrollbar-hover);
 }
 
 /* Form elements */
@@ -164,22 +229,24 @@
   margin-bottom: 4px;
   font-size: 12px;
   font-weight: 500;
-  color: #555;
+  color: var(--mlr-text-soft);
 }
 
 .plugin-control-input {
   width: 100%;
   padding: 8px 10px;
   font-size: 14px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--mlr-border);
   border-radius: 4px;
+  background: var(--mlr-bg);
+  color: var(--mlr-text);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .plugin-control-input:focus {
-  border-color: #4a90d9;
-  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.15);
+  border-color: var(--mlr-accent);
+  box-shadow: 0 0 0 3px var(--mlr-accent-soft);
 }
 
 .plugin-control-button {
@@ -190,7 +257,7 @@
   font-size: 14px;
   font-weight: 500;
   color: white;
-  background: #4a90d9;
+  background: var(--mlr-accent);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -198,16 +265,16 @@
 }
 
 .plugin-control-button:hover {
-  background: #3a7bc8;
+  background: var(--mlr-accent-strong);
 }
 
 .plugin-control-button:focus {
-  outline: 2px solid #4a90d9;
+  outline: 2px solid var(--mlr-accent);
   outline-offset: 2px;
 }
 
 .plugin-control-button:disabled {
-  background: #ccc;
+  background: var(--mlr-disabled-bg);
   cursor: not-allowed;
 }
 
@@ -225,7 +292,7 @@
 
 .plugin-control-divider {
   height: 1px;
-  background: #e0e0e0;
+  background: var(--mlr-border-soft);
   margin: 12px 0;
 }
 
@@ -237,7 +304,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  color: #333;
+  color: var(--mlr-text);
 }
 
 .mlr-section {
@@ -251,8 +318,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #777;
-  border-bottom: 1px solid #eee;
+  color: var(--mlr-text-muted);
+  border-bottom: 1px solid var(--mlr-border-faint);
   padding-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -289,7 +356,7 @@
 .mlr-field-label {
   font-size: 11px;
   font-weight: 500;
-  color: #555;
+  color: var(--mlr-text-soft);
 }
 
 /* Collapsible field (e.g. Rescale) */
@@ -300,7 +367,7 @@
 }
 
 .mlr-collapsible > summary:hover {
-  color: #333;
+  color: var(--mlr-text);
 }
 
 .mlr-collapsible[open] > summary {
@@ -312,8 +379,10 @@
   box-sizing: border-box;
   padding: 5px 8px;
   font-size: 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--mlr-border);
   border-radius: 4px;
+  background: var(--mlr-bg);
+  color: var(--mlr-text);
   outline: none;
   transition:
     border-color 0.15s,
@@ -321,8 +390,8 @@
 }
 
 .mlr-input:focus {
-  border-color: #4a90d9;
-  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.15);
+  border-color: var(--mlr-accent);
+  box-shadow: 0 0 0 3px var(--mlr-accent-soft);
 }
 
 .mlr-select {
@@ -330,14 +399,15 @@
   box-sizing: border-box;
   padding: 5px 6px;
   font-size: 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--mlr-border);
   border-radius: 4px;
-  background: #fff;
+  background: var(--mlr-bg);
+  color: var(--mlr-text);
   outline: none;
 }
 
 .mlr-select:focus {
-  border-color: #4a90d9;
+  border-color: var(--mlr-accent);
 }
 
 .mlr-button {
@@ -345,7 +415,7 @@
   font-size: 12px;
   font-weight: 500;
   color: white;
-  background: #4a90d9;
+  background: var(--mlr-accent);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -354,23 +424,23 @@
 }
 
 .mlr-button:hover {
-  background: #3a7bc8;
+  background: var(--mlr-accent-strong);
 }
 
 .mlr-button:disabled {
-  background: #ccc;
+  background: var(--mlr-disabled-bg);
   cursor: not-allowed;
 }
 
 /* Add data */
 .mlr-drop-zone {
-  border: 1.5px dashed #c4c9d0;
+  border: 1.5px dashed var(--mlr-border-strong);
   border-radius: 4px;
   padding: 12px;
   text-align: center;
   cursor: pointer;
-  background: #f7f8f9;
-  color: #888;
+  background: var(--mlr-surface-soft);
+  color: var(--mlr-text-muted);
   font-size: 11px;
   transition:
     border-color 0.15s,
@@ -379,9 +449,9 @@
 
 .mlr-drop-zone:hover,
 .mlr-drop-zone.dragover {
-  border-color: #4a90d9;
-  background: rgba(74, 144, 217, 0.06);
-  color: #4a90d9;
+  border-color: var(--mlr-accent);
+  background: var(--mlr-accent-soft);
+  color: var(--mlr-accent);
 }
 
 /* Layer list */
@@ -400,21 +470,22 @@
 }
 
 .mlr-layer-row:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--mlr-hover);
 }
 
 .mlr-layer-row.selected {
-  background: rgba(74, 144, 217, 0.12);
+  background: var(--mlr-accent-soft);
 }
 
 .mlr-layer-row.errored .mlr-layer-name {
-  color: #c0392b;
+  color: var(--mlr-error);
 }
 
 .mlr-layer-row input[type='checkbox'] {
   margin: 0;
   flex-shrink: 0;
   cursor: pointer;
+  accent-color: var(--mlr-accent);
 }
 
 .mlr-layer-name {
@@ -424,7 +495,7 @@
   background: none;
   text-align: left;
   font-size: 12px;
-  color: #333;
+  color: var(--mlr-text);
   cursor: pointer;
   padding: 2px 2px;
   white-space: nowrap;
@@ -441,7 +512,7 @@
   height: 20px;
   border: none;
   background: transparent;
-  color: #888;
+  color: var(--mlr-text-muted);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
@@ -457,25 +528,25 @@
 }
 
 .mlr-icon-button:hover {
-  color: #333;
-  background: rgba(0, 0, 0, 0.06);
+  color: var(--mlr-text);
+  background: var(--mlr-hover);
 }
 
 .mlr-icon-button:disabled {
-  color: #ccc;
+  color: var(--mlr-disabled-text);
   cursor: default;
   background: transparent;
 }
 
 .mlr-empty {
-  color: #999;
+  color: var(--mlr-text-faint);
   font-size: 11px;
   text-align: center;
   padding: 6px 0;
 }
 
 .mlr-error {
-  color: #c0392b;
+  color: var(--mlr-error);
   font-size: 11px;
   padding: 4px 0;
   overflow-wrap: anywhere;
@@ -509,10 +580,10 @@
 .mlr-preset-button {
   padding: 2px 8px;
   font-size: 11px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--mlr-border);
   border-radius: 4px;
-  background: #fff;
-  color: #555;
+  background: var(--mlr-bg);
+  color: var(--mlr-text-soft);
   cursor: pointer;
   transition:
     background-color 0.15s,
@@ -520,19 +591,19 @@
 }
 
 .mlr-preset-button:hover {
-  border-color: #4a90d9;
+  border-color: var(--mlr-accent);
 }
 
 .mlr-preset-button.active {
-  background: #4a90d9;
-  border-color: #4a90d9;
+  background: var(--mlr-accent);
+  border-color: var(--mlr-accent);
   color: #fff;
 }
 
 .mlr-slider {
   width: 100%;
   margin: 0;
-  accent-color: #4a90d9;
+  accent-color: var(--mlr-accent);
 }
 
 /* Histogram */
@@ -568,14 +639,14 @@
 }
 
 .mlr-histogram-bg {
-  fill: #f1f3f5;
+  fill: var(--mlr-surface-muted);
 }
 
 .mlr-histogram-handle {
   position: absolute;
   top: 50%;
   border-radius: 50%;
-  background: #fff;
+  background: var(--mlr-bg);
   border: 1.5px solid currentcolor;
   transform: translate(-50%, -50%);
   cursor: ew-resize;

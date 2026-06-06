@@ -59,6 +59,8 @@ export interface RasterLayerInfo {
   bandCount: number | null;
   /** 1-indexed band names parsed from GDAL_METADATA, when present. */
   bandNames: globalThis.Map<number, string> | null;
+  /** Map style layer id the raster is inserted beneath, when set. */
+  beforeId: string | null;
   /** Current visualization state. */
   state: RasterLayerState;
 }
@@ -76,6 +78,10 @@ export interface AddRasterOptions {
   state?: Partial<RasterLayerState>;
   /** Fit the map to the raster's bounds once loaded. @default true */
   zoomTo?: boolean;
+  /** Id of an existing map style layer to insert the raster beneath (e.g. a
+   * symbol layer so labels stay readable). Drawn on top when omitted or when
+   * the layer does not exist. */
+  beforeId?: string;
 }
 
 /**

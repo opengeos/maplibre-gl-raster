@@ -382,7 +382,7 @@ export class SettingsSection {
     for (let i = 0; i < channelCount; i++) {
       const channel = mode === 'single' ? null : RGB_CHANNELS[i];
       const row = new RescaleRow({
-        color: channel?.color ?? 'rgb(31, 42, 55)',
+        color: channel?.color ?? 'var(--mlr-histogram-neutral)',
         label: channel?.label,
         ariaPrefix:
           mode === 'single'
