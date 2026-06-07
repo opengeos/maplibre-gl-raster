@@ -17,7 +17,7 @@ function makeFakeMap() {
     off: vi.fn((ev: string, h: (e: unknown) => void) => {
       handlers[ev] = (handlers[ev] ?? []).filter((x) => x !== h);
     }),
-    getCanvas: () => canvas,
+    getCanvasContainer: () => canvas,
   };
   return {
     map: map as unknown as MapLibreMap,

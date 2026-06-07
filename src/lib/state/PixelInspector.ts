@@ -163,8 +163,13 @@ export class PixelInspector {
   }
 
   private _setCursor(value: string): void {
-    const canvas = this._map.getCanvas?.();
-    if (canvas) canvas.style.cursor = value;
+    // maplibre styles the cursor via CSS classes on the canvas container
+    // (grab / grabbing). An inline cursor on that same container overrides
+    // those rules, so the crosshair sticks even while panning. Fall back to
+    // the canvas element when the container getter is unavailable.
+    const target =
+      this._map.getCanvasContainer?.() ?? this._map.getCanvas?.();
+    if (target) target.style.cursor = value;
   }
 
   private _messageContent(text: string): Node {
