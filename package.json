@@ -68,9 +68,11 @@
     "@chunkd/source": "^11.4.0",
     "@chunkd/source-http": "^11.4.0",
     "@cogeotiff/core": "^9.5.0",
-    "@developmentseed/deck.gl-geotiff": "^0.6.1",
-    "@developmentseed/deck.gl-raster": "0.6.1",
-    "@developmentseed/geotiff": "^0.6.1"
+    "@developmentseed/deck.gl-geotiff": "^0.7.0",
+    "@developmentseed/deck.gl-raster": "0.7.0",
+    "@developmentseed/geotiff": "^0.7.0",
+    "@developmentseed/proj": "^0.7.0",
+    "proj4": "^2.20.8"
   },
   "peerDependencies": {
     "@deck.gl/core": "^9.3.2",
