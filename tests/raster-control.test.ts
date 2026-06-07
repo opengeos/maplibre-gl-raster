@@ -35,3 +35,45 @@ describe('RasterControl panel sizing', () => {
     control.onRemove();
   });
 });
+
+describe('RasterControl pixel inspector wiring', () => {
+  type Internals = {
+    _inspector?: { enable: () => void; enabled: boolean };
+    _state: { collapsed: boolean };
+  };
+
+  it('creates a pixel inspector when added to the map', () => {
+    const control = new RasterControl({ collapsed: false });
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+
+    expect((control as unknown as Internals)._inspector).toBeDefined();
+
+    control.onRemove();
+  });
+
+  it('collapses on an outside click when not inspecting', () => {
+    const control = new RasterControl({ collapsed: false });
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+    control.expand();
+
+    document.body.click();
+
+    expect((control as unknown as Internals)._state.collapsed).toBe(true);
+    control.onRemove();
+  });
+
+  it('stays open on an outside click while inspecting', () => {
+    const control = new RasterControl({ collapsed: false });
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+    control.expand();
+    (control as unknown as Internals)._inspector!.enable();
+
+    document.body.click();
+
+    expect((control as unknown as Internals)._state.collapsed).toBe(false);
+    control.onRemove();
+  });
+});

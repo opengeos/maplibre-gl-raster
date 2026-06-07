@@ -1,5 +1,6 @@
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl';
 import { LayerManager } from '../state/LayerManager';
+import { PixelInspector } from '../state/PixelInspector';
 import { toLayerInfo } from '../state/RasterLayer';
 import { PanelUI } from '../ui/PanelUI';
 import type {
@@ -56,6 +57,7 @@ export class RasterControl implements IControl {
   private _eventHandlers: EventHandlersMap = new globalThis.Map();
   private _layerManager?: LayerManager;
   private _panelUI?: PanelUI;
+  private _inspector?: PixelInspector;
   private _onReady: (() => void)[] = [];
 
   // Panel positioning handlers
@@ -99,6 +101,14 @@ export class RasterControl implements IControl {
       interleaved: this._options.interleaved,
     });
     this._forwardLayerManagerEvents(this._layerManager);
+
+    // Pixel inspector: reads source values of the selected layer on map click.
+    const manager = this._layerManager;
+    this._inspector = new PixelInspector(map, () => {
+      const id = manager.selectedId;
+      return id ? (manager.getLayer(id) ?? null) : null;
+    });
+
     const content = this._panel.querySelector<HTMLElement>(
       '.mlr-control-content',
     );
@@ -108,6 +118,10 @@ export class RasterControl implements IControl {
         // When auto-loading, leave the input empty — the raster is already
         // on its way, and a prefilled Load button would just add a duplicate.
         defaultUrl: autoLoading ? '' : this._options.defaultUrl,
+        inspect: {
+          onToggle: () => this._inspector?.toggle(),
+          isActive: () => this._inspector?.enabled ?? false,
+        },
       });
     }
     if (autoLoading) {
@@ -144,6 +158,8 @@ export class RasterControl implements IControl {
     // aborts in-flight loads, revokes blob URLs).
     this._panelUI?.destroy();
     this._panelUI = undefined;
+    this._inspector?.destroy();
+    this._inspector = undefined;
     this._layerManager?.destroy();
     this._layerManager = undefined;
 
@@ -486,6 +502,9 @@ export class RasterControl implements IControl {
       // button whose click handler re-rendered the settings UI) — contains()
       // would report false and wrongly collapse the panel.
       if (!target.isConnected) return;
+      // While inspecting, a map click is the inspect gesture, not a request to
+      // dismiss the panel — keep the panel open so the toggle stays reachable.
+      if (this._inspector?.enabled) return;
       if (
         this._container &&
         this._panel &&
