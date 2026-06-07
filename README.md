@@ -13,6 +13,7 @@ A MapLibre GL JS plugin for visualizing local and remote raster datasets (GeoTIF
 - **Multiple layers** - Layer list with visibility toggles, reordering, zoom-to, and per-layer settings
 - **GPU rendering pipeline** - Band compositing, per-band rescale, 90+ colormaps, nodata filtering, linear/sqrt/log stretch, and gamma correction as deck.gl shader modules; parameter changes re-render without re-fetching tiles
 - **Auto statistics** - Per-band min/max and histograms sampled from COG overviews (or GDAL metadata), with draggable histogram handles for the rescale range
+- **Pixel inspector** - Toggle inspect mode and click the map to read the raw source values of every band of the selected layer at that location, shown in a popup (works for COGs in any CRS)
 - **Collapsible control** - A compact 29x29 map button that expands into a floating panel
 - **TypeScript + React** - Full type definitions, a React wrapper component, and hooks
 - **GeoLibre bundle output** - Builds a zip with root `plugin.json`, bundled ESM, and CSS for GeoLibre Desktop

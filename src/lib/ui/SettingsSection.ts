@@ -48,6 +48,17 @@ const rangesMatch = (a: [number, number], b: [number, number]) =>
 
 type Preset = 'percentile' | 'minmax' | 'custom';
 
+/** Hooks wiring the Settings header's inspect toggle to a PixelInspector. */
+export interface InspectHooks {
+  /** Flip inspect mode on/off. */
+  onToggle: () => void;
+  /** Whether inspect mode is currently active. */
+  isActive: () => boolean;
+}
+
+const INSPECT_HELP =
+  'Inspect mode: click the map to read the raw pixel values of this layer at that location.';
+
 function bandLabel(idx: number, names: Map<number, string> | null): string {
   const name = names?.get(idx);
   return name ? `${idx} — ${name}` : String(idx);
@@ -154,6 +165,8 @@ export class SettingsSection {
   readonly el: HTMLElement;
   private _body: HTMLElement;
   private _title: HTMLElement;
+  private _inspect: InspectHooks | null;
+  private _inspectBtn: HTMLButtonElement | null = null;
   private _getLayer: () => RasterLayer | null;
   private _setState: (patch: Partial<RasterLayerState>) => void;
   private _applying = false;
@@ -172,8 +185,10 @@ export class SettingsSection {
   constructor(
     getLayer: () => RasterLayer | null,
     setState: (patch: Partial<RasterLayerState>) => void,
+    inspect?: InspectHooks,
   ) {
     this._getLayer = getLayer;
+    this._inspect = inspect ?? null;
     this._setState = (patch) => {
       this._applying = true;
       try {
@@ -182,15 +197,38 @@ export class SettingsSection {
         this._applying = false;
       }
     };
-    this._title = el('div', { className: 'mlr-section-title', text: 'Settings' });
+    this._title = el('span', { className: 'mlr-section-title', text: 'Settings' });
+    const header = el('div', { className: 'mlr-settings-header' }, this._title);
+    if (this._inspect) {
+      this._inspectBtn = el('button', {
+        className: 'mlr-inspect-toggle',
+        type: 'button',
+        text: 'Inspect',
+        title: INSPECT_HELP,
+        ariaLabel: 'inspect-toggle',
+      });
+      this._inspectBtn.addEventListener('click', () => {
+        this._inspect!.onToggle();
+        this._syncInspectButton();
+      });
+      header.appendChild(this._inspectBtn);
+    }
     this._body = el('div', { className: 'mlr-settings-body' });
     this.el = el(
       'div',
       { className: 'mlr-section mlr-settings' },
-      this._title,
+      header,
       this._body,
     );
     this.render();
+  }
+
+  /** Reflects the inspector's active state on the toggle button. */
+  private _syncInspectButton(): void {
+    if (!this._inspectBtn || !this._inspect) return;
+    const active = this._inspect.isActive();
+    this._inspectBtn.classList.toggle('active', active);
+    this._inspectBtn.setAttribute('aria-pressed', String(active));
   }
 
   /** Reacts to a LayerManager change event: rebuilds unless the change came
@@ -209,6 +247,7 @@ export class SettingsSection {
     const layer = this._getLayer();
     clearEl(this._body);
     this._dirty = false;
+    this._syncInspectButton();
 
     if (!layer) {
       this.el.style.display = 'none';

@@ -2,7 +2,7 @@ import type { LayerManager } from '../state/LayerManager';
 import { AddDataSection } from './AddDataSection';
 import { el } from './dom';
 import { LayerList } from './LayerList';
-import { SettingsSection } from './SettingsSection';
+import { SettingsSection, type InspectHooks } from './SettingsSection';
 
 /**
  * Composes the panel content: Add data, Layers, and Settings sections.
@@ -26,7 +26,7 @@ export class PanelUI {
   constructor(
     container: HTMLElement,
     manager: LayerManager,
-    options?: { defaultUrl?: string },
+    options?: { defaultUrl?: string; inspect?: InspectHooks },
   ) {
     this._manager = manager;
 
@@ -68,6 +68,7 @@ export class PanelUI {
         const id = this._manager.selectedId;
         if (id) this._manager.setState(id, patch);
       },
+      options?.inspect,
     );
 
     this._root = el(

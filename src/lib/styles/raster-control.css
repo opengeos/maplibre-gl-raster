@@ -667,3 +667,143 @@
   border-radius: 2px;
   image-rendering: auto;
 }
+
+/* Settings header + inspect toggle */
+.mlr-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--mlr-border-faint);
+  padding-bottom: 4px;
+}
+
+.mlr-settings-header .mlr-section-title {
+  border-bottom: none;
+  padding-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.mlr-inspect-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--mlr-border);
+  border-radius: 4px;
+  background: var(--mlr-bg);
+  color: var(--mlr-text-soft);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.mlr-inspect-toggle:hover {
+  background: var(--mlr-hover);
+}
+
+.mlr-inspect-toggle.active {
+  background: var(--mlr-accent);
+  border-color: var(--mlr-accent-strong);
+  color: #fff;
+}
+
+/* Inspector popup */
+.mlr-inspect-popup .maplibregl-popup-content {
+  background: var(--mlr-bg);
+  color: var(--mlr-text);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px var(--mlr-shadow);
+  padding: 8px 24px 8px 10px;
+}
+
+.mlr-inspect-popup .maplibregl-popup-close-button {
+  color: var(--mlr-text-muted);
+  font-size: 16px;
+  padding: 0 4px;
+}
+
+.mlr-inspect-popup .maplibregl-popup-close-button:hover {
+  background: var(--mlr-hover);
+  color: var(--mlr-text);
+}
+
+/* Tip color must follow the popup anchor so the triangle matches the bg. */
+.mlr-inspect-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.mlr-inspect-popup.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.mlr-inspect-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: var(--mlr-bg);
+}
+
+.mlr-inspect-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.mlr-inspect-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.mlr-inspect-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: var(--mlr-bg);
+}
+
+.mlr-inspect-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--mlr-bg);
+}
+
+.mlr-inspect-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--mlr-bg);
+}
+
+.mlr-inspect-content {
+  font-size: 12px;
+  line-height: 1.4;
+  min-width: 130px;
+}
+
+.mlr-inspect-title {
+  font-weight: 600;
+  color: var(--mlr-text-strong);
+  margin-bottom: 2px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mlr-inspect-coord {
+  color: var(--mlr-text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+
+.mlr-inspect-bands {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mlr-inspect-band {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mlr-inspect-band-label {
+  color: var(--mlr-text-soft);
+}
+
+.mlr-inspect-band-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--mlr-text-strong);
+}
+
+.mlr-inspect-band-nodata .mlr-inspect-band-value {
+  font-weight: 400;
+  color: var(--mlr-text-faint);
+}
+
+.mlr-inspect-message {
+  color: var(--mlr-text-soft);
+}
