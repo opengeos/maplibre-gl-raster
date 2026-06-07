@@ -7,7 +7,8 @@
  */
 
 .mlr-control,
-.mlr-control-panel {
+.mlr-control-panel,
+.mlr-inspect-popup {
   --mlr-bg: #fff;
   --mlr-surface-muted: #f1f3f5;
   --mlr-surface-soft: #f7f8f9;
@@ -37,7 +38,8 @@
 
 @media (prefers-color-scheme: dark) {
   .mlr-control,
-  .mlr-control-panel {
+  .mlr-control-panel,
+  .mlr-inspect-popup {
     --mlr-bg: #23282e;
     --mlr-surface-muted: #2e343b;
     --mlr-surface-soft: #2a3036;
