@@ -5,10 +5,12 @@ import {
   decodeColormapSprite,
 } from '@developmentseed/deck.gl-raster/gpu-modules';
 import { parseColormap, type GeoTIFF } from '@developmentseed/geotiff';
+import type { EpsgResolver } from '@developmentseed/proj';
 import type { Device, Texture } from '@luma.gl/core';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { AddRasterOptions, RasterLayerState } from '../core/types';
 import { colormapsPngUrl } from '../raster/colormaps';
+import { createResilientEpsgResolver } from '../raster/epsg-resolver';
 import { loadGeoTIFF as defaultLoadGeoTIFF } from '../raster/load-geotiff';
 import {
   buildPaletteCompositeRenderTile,
@@ -129,11 +131,19 @@ export interface LayerManagerDeps {
   ) => OverlayLike;
   /** Removes a previously created overlay from the map. */
   removeOverlay: (map: MapLibreMap, overlay: OverlayLike) => void;
+  /**
+   * Resolves a GeoTIFF's numeric EPSG code to a projection definition for
+   * reprojection. Defaults to a resolver that answers common CRS offline and
+   * delegates the rest to epsg.io; supply a fully offline resolver to remove
+   * the network dependency.
+   */
+  epsgResolver: EpsgResolver;
 }
 
 const DEFAULT_DEPS: LayerManagerDeps = {
   loadGeoTIFF: defaultLoadGeoTIFF,
   computeAutoStats: defaultComputeAutoStats,
+  epsgResolver: createResilientEpsgResolver(),
   createOverlay: (map, options) => {
     const overlay = new MapboxOverlay({
       interleaved: options.interleaved,
@@ -171,6 +181,11 @@ export class LayerManager {
     LayerManagerEvent,
     Set<LayerManagerEventHandler>
   >();
+  // Layer ids whose CRS could not be resolved. COGLayer only reprojects once
+  // it has a projection, so these layers cannot render; they are excluded from
+  // _rebuild (so the failing resolver is not retried in a render loop) and
+  // their error is surfaced once via _failLayerCrs.
+  private _crsFailed = new Set<string>();
   private _destroyed = false;
 
   /**
@@ -307,6 +322,7 @@ export class LayerManager {
     if (layer.source.kind === 'file') {
       URL.revokeObjectURL(layer.source.objectUrl);
     }
+    this._crsFailed.delete(id);
     this._destroyPaletteTexture(layer);
     if (this._selectedId === id) {
       this.select(this._layers[this._layers.length - 1]?.id ?? null);
@@ -513,7 +529,7 @@ export class LayerManager {
   private _rebuild(): void {
     if (!this._overlay) return;
     const layers = this._layers
-      .filter((l) => l.geotiff && l.state.visible)
+      .filter((l) => l.geotiff && l.state.visible && !this._crsFailed.has(l.id))
       .map((l) => this._buildCogLayer(l));
     this._overlay.setProps({ layers });
   }
@@ -533,6 +549,14 @@ export class LayerManager {
       getTileData,
       renderTile,
       beforeId: this._resolveBeforeId(layer.beforeId),
+      // COGLayer resolves the GeoTIFF's CRS inside its own (un-awaited,
+      // un-caught) parse step, so a resolver rejection would otherwise leave an
+      // invisible layer with no error. Surface it as a layer error instead.
+      epsgResolver: (epsg: number) =>
+        this._deps.epsgResolver(epsg).catch((err: unknown) => {
+          this._failLayerCrs(layer, err);
+          throw err;
+        }),
       onGeoTIFFLoad: (
         _tiff: GeoTIFF,
         options: { geographicBounds: GeographicBounds },
@@ -552,6 +576,26 @@ export class LayerManager {
       },
     };
     return new COGLayer(cogProps);
+  }
+
+  /** Records a CRS-resolution failure once: marks the layer errored, drops it
+   * from future rebuilds (so the resolver is not retried in a loop), and emits
+   * the error to consumers. Runs after the resolver promise settles, so it is
+   * never synchronous with a deck.gl render. */
+  private _failLayerCrs(layer: RasterLayer, err: unknown): void {
+    if (
+      this._destroyed ||
+      !this.getLayer(layer.id) ||
+      this._crsFailed.has(layer.id)
+    ) {
+      return;
+    }
+    this._crsFailed.add(layer.id);
+    const error = err instanceof Error ? err : new Error(String(err));
+    layer.loading = false;
+    layer.error = error;
+    this._emit({ type: 'error', layerId: layer.id, error });
+    this._emit({ type: 'rasterchange', layerId: layer.id });
   }
 
   /** Returns the beforeId only when that layer exists in the map's current

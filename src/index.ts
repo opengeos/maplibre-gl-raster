@@ -6,6 +6,7 @@ export { RasterControl } from './lib/core/RasterControl';
 
 // Raster utilities for advanced use
 export { loadGeoTIFF } from './lib/raster/load-geotiff';
+export { createResilientEpsgResolver } from './lib/raster/epsg-resolver';
 export { summarizeGeoTIFF } from './lib/raster/metadata';
 export {
   computeAutoStats,
@@ -47,6 +48,8 @@ export type {
 } from './lib/raster/metadata';
 export type { AutoStats, BandStats } from './lib/raster/stats';
 export type { ColormapOption } from './lib/raster/colormaps';
+export type { ResilientEpsgResolverOptions } from './lib/raster/epsg-resolver';
+export type { EpsgResolver } from '@developmentseed/proj';
 
 // Utility exports
 export {

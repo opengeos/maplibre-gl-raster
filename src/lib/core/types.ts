@@ -1,3 +1,4 @@
+import type { EpsgResolver } from '@developmentseed/proj';
 import type { Map } from 'maplibre-gl';
 
 /** Rendering mode: RGB composite (one band per channel) or single band
@@ -152,6 +153,15 @@ export interface RasterControlOptions {
    * @default false
    */
   autoLoad?: boolean;
+
+  /**
+   * Resolves a GeoTIFF's numeric EPSG code to a projection definition used for
+   * reprojection. Defaults to {@link createResilientEpsgResolver}, which
+   * answers common CRS offline and looks the rest up from epsg.io. Supply a
+   * fully offline resolver (e.g. backed by a local EPSG database) to remove the
+   * network dependency entirely. Resolution failures surface as a layer error.
+   */
+  epsgResolver?: EpsgResolver;
 }
 
 /**
