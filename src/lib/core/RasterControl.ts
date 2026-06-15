@@ -1,4 +1,5 @@
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl';
+import { createResilientEpsgResolver } from '../raster/epsg-resolver';
 import { LayerManager } from '../state/LayerManager';
 import { PixelInspector } from '../state/PixelInspector';
 import { toLayerInfo } from '../state/RasterLayer';
@@ -25,6 +26,7 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   interleaved: true,
   defaultUrl: '',
   autoLoad: false,
+  epsgResolver: createResilientEpsgResolver(),
 };
 
 /**
@@ -97,9 +99,11 @@ export class RasterControl implements IControl {
 
     // Wire the raster machinery: one LayerManager (owning the deck.gl
     // overlay) plus the panel UI bound to it.
-    this._layerManager = new LayerManager(map, {
-      interleaved: this._options.interleaved,
-    });
+    this._layerManager = new LayerManager(
+      map,
+      { interleaved: this._options.interleaved },
+      { epsgResolver: this._options.epsgResolver },
+    );
     this._forwardLayerManagerEvents(this._layerManager);
 
     // Pixel inspector: reads source values of the selected layer on map click.

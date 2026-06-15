@@ -32,6 +32,7 @@ function makeFakeStats(): AutoStats {
 function makeHarness(opts?: {
   bandCount?: number;
   failLoad?: boolean;
+  epsgResolver?: LayerManagerDeps['epsgResolver'];
 }) {
   const setProps = vi.fn();
   const overlay: OverlayLike = { setProps };
@@ -50,6 +51,7 @@ function makeHarness(opts?: {
     computeAutoStats: vi.fn(async () => makeFakeStats()),
     createOverlay: vi.fn(() => overlay),
     removeOverlay: vi.fn(),
+    ...(opts?.epsgResolver ? { epsgResolver: opts.epsgResolver } : {}),
   };
 
   const manager = new LayerManager(map, { interleaved: true }, deps);
@@ -350,6 +352,58 @@ describe('LayerManager bounds integration', () => {
     // The snapshot owns its copy; mutating it must not touch the layer.
     info.bounds!.west = -999;
     expect(manager.getLayer(id)!.bounds).toEqual(BOUNDS);
+  });
+});
+
+describe('LayerManager CRS resolution', () => {
+  /** Pulls the epsgResolver passed to the last COGLayer pushed to the overlay.
+   * This is the per-layer wrapper LayerManager builds around the dep resolver. */
+  function lastEpsgResolver(setProps: ReturnType<typeof vi.fn>) {
+    const lastCall = setProps.mock.calls.at(-1)![0];
+    return lastCall.layers[0].props.epsgResolver as (
+      epsg: number,
+    ) => Promise<unknown>;
+  }
+
+  it('surfaces a CRS-resolution failure as a layer error instead of failing silently', async () => {
+    const epsgResolver = vi.fn(async () => {
+      throw new Error('Could not resolve coordinate system EPSG:26916');
+    });
+    const { manager, setProps, events } = makeHarness({ epsgResolver });
+    const id = await manager.addRaster('https://example.com/warped.tif');
+    events.length = 0;
+
+    // COGLayer would call this during its (un-awaited) parse step; invoking it
+    // directly exercises the same wrapper without a real deck.gl render.
+    await expect(lastEpsgResolver(setProps)(26916)).rejects.toThrow(/EPSG:26916/);
+
+    const layer = manager.getLayer(id)!;
+    expect(layer.error).toBeInstanceOf(Error);
+    expect(layer.loading).toBe(false);
+    expect(
+      events.filter((e) => e.type === 'error' && e.layerId === id),
+    ).toHaveLength(1);
+  });
+
+  it('drops a CRS-failed layer from later rebuilds and emits the error once', async () => {
+    const epsgResolver = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const { manager, setProps, events } = makeHarness({ epsgResolver });
+    const id = await manager.addRaster('https://example.com/warped.tif');
+
+    const resolver = lastEpsgResolver(setProps);
+    await expect(resolver(26916)).rejects.toThrow();
+    // A second failure (e.g. a retried render) must not re-emit.
+    await expect(resolver(26916)).rejects.toThrow();
+    expect(
+      events.filter((e) => e.type === 'error' && e.layerId === id),
+    ).toHaveLength(1);
+
+    // A subsequent rebuild excludes the failed layer.
+    manager.setState(id, { opacity: 0.5 });
+    const lastLayers = setProps.mock.calls.at(-1)![0].layers as unknown[];
+    expect(lastLayers).toHaveLength(0);
   });
 });
 
