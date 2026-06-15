@@ -2,6 +2,7 @@ import { SourceCache, SourceChunk } from '@chunkd/middleware';
 import { SourceView } from '@chunkd/source';
 import { SourceHttp } from '@chunkd/source-http';
 import { GeoTIFF } from '@developmentseed/geotiff';
+import { repairUserDefinedProjectedCrs } from './repair-geokeys';
 
 /**
  * COG access pattern is hundreds of distinct Range requests against the
@@ -102,10 +103,14 @@ export function loadGeoTIFF(url: string): Promise<GeoTIFF> {
       new SourceChunk({ size: CHUNK_SIZE }),
       new SourceCache({ size: CACHE_SIZE }),
     ]);
-    return await GeoTIFF.open({
+    const tiff = await GeoTIFF.open({
       dataSource: source,
       headerSource: view,
     });
+    // Normalise projected CRSes written with a user-defined model type before
+    // anything reads (and caches) the overview CRS. See repair-geokeys.ts.
+    repairUserDefinedProjectedCrs(tiff);
+    return tiff;
   })();
 
   inflight.set(url, promise);
