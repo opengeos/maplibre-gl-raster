@@ -194,7 +194,7 @@
   touch-action: none;
   background-image: repeating-linear-gradient(
     135deg,
-    currentColor 0 1px,
+    currentcolor 0 1px,
     transparent 1px 3px
   );
 }

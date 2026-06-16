@@ -20,12 +20,14 @@ function fakeTile(): MultiBandTileData {
   };
 }
 
-function colormapProps(reversed: boolean): Record<string, unknown> | undefined {
+function colormapProps(reversed?: boolean): Record<string, unknown> | undefined {
+  // Omit `reversed` entirely in the default case so the test exercises
+  // createLayerState's default rather than an explicit value.
   const state = createLayerState({
     mode: 'single',
     bands: [1],
     colormap: 'viridis',
-    reversed,
+    ...(reversed === undefined ? {} : { reversed }),
   });
   const renderTile = buildSingleCompositeRenderTile(state, {} as Texture, null);
   const { renderPipeline } = renderTile(fakeTile());
@@ -36,7 +38,7 @@ function colormapProps(reversed: boolean): Record<string, unknown> | undefined {
 
 describe('single-band colormap reversed', () => {
   it('passes reversed: false by default', () => {
-    expect(colormapProps(false)?.reversed).toBe(false);
+    expect(colormapProps()?.reversed).toBe(false);
   });
 
   it('passes reversed: true through to the Colormap module', () => {

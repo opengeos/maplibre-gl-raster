@@ -237,9 +237,11 @@ Keep it in sync with a single-band raster by updating it from the control's
 control.on("rasterchange", ({ layerId }) => {
   const info = layerId ? control.getRaster(layerId) : undefined;
   const range = info?.state.rescale?.[0]; // [min, max] when set explicitly
-  if (info && range) {
+  // 'palette' uses the image's embedded table, not a named colormap.
+  if (info && range && info.state.colormap !== "palette") {
     colorbar.update({
       colormap: info.state.colormap,
+      reversed: info.state.reversed,
       min: range[0],
       max: range[1],
     });

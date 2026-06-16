@@ -16,11 +16,16 @@ let spritePromise: Promise<HTMLImageElement> | null = null;
  */
 export function loadColormapSprite(): Promise<HTMLImageElement> {
   if (!spritePromise) {
-    spritePromise = new Promise((resolve, reject) => {
+    spritePromise = new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image();
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error('Failed to load colormap sprite'));
       img.src = colormapsPngUrl;
+    }).catch((error) => {
+      // Don't poison the cache on a transient fetch/decode failure: clear it
+      // so the next call retries the load.
+      spritePromise = null;
+      throw error;
     });
   }
   return spritePromise;
@@ -57,6 +62,8 @@ export async function sampleColormapStops(
 ): Promise<string[]> {
   const rowIndex = (COLORMAP_INDEX as Record<string, number>)[name.toLowerCase()];
   if (rowIndex === undefined || steps < 2) return [];
+  // No DOM (e.g. SSR / Node) means no canvas to sample through.
+  if (typeof document === 'undefined') return [];
 
   const sprite = await loadColormapSprite();
   const canvas = document.createElement('canvas');
@@ -76,7 +83,13 @@ export async function sampleColormapStops(
     COLORMAP_SPRITE_WIDTH,
     1,
   );
-  const { data } = ctx.getImageData(0, 0, COLORMAP_SPRITE_WIDTH, 1);
+  // getImageData can throw (e.g. a tainted canvas); treat as unsamplable.
+  let data: Uint8ClampedArray;
+  try {
+    ({ data } = ctx.getImageData(0, 0, COLORMAP_SPRITE_WIDTH, 1));
+  } catch {
+    return [];
+  }
 
   const stops: string[] = [];
   for (let i = 0; i < steps; i += 1) {

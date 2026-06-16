@@ -653,10 +653,11 @@ export class RasterControl implements IControl {
       this._userPanelSize = { width, height };
       this._applyUserPanelSize();
     };
-    const onUp = (event: PointerEvent): void => {
+    const onEnd = (event: PointerEvent): void => {
       handle.releasePointerCapture?.(event.pointerId);
       handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointerup', onEnd);
+      handle.removeEventListener('pointercancel', onEnd);
     };
     handle.addEventListener('pointerdown', (event) => {
       if (!this._panel || !this._mapContainer) return;
@@ -682,7 +683,9 @@ export class RasterControl implements IControl {
         PANEL_EDGE_MARGIN;
       handle.setPointerCapture?.(event.pointerId);
       handle.addEventListener('pointermove', onMove);
-      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointerup', onEnd);
+      // Touch/pen drags can end with pointercancel instead of pointerup.
+      handle.addEventListener('pointercancel', onEnd);
     });
   }
 
@@ -705,8 +708,16 @@ export class RasterControl implements IControl {
     const maxH =
       (bottom ? rect.bottom - mapRect.top : mapRect.bottom - rect.top) -
       PANEL_EDGE_MARGIN;
-    const width = Math.min(this._userPanelSize.width, Math.max(PANEL_MIN_WIDTH, maxW));
-    const height = Math.min(this._userPanelSize.height, Math.max(PANEL_MIN_HEIGHT, maxH));
+    // Cap to the room available even when that is below the minimum, so a
+    // small map / window can't force an overflowing panel after reposition.
+    const width = Math.min(
+      Math.max(PANEL_MIN_WIDTH, this._userPanelSize.width),
+      Math.max(0, maxW),
+    );
+    const height = Math.min(
+      Math.max(PANEL_MIN_HEIGHT, this._userPanelSize.height),
+      Math.max(0, maxH),
+    );
     this._panel.style.boxSizing = 'border-box';
     this._panel.style.maxWidth = 'none';
     this._panel.style.maxHeight = 'none';
