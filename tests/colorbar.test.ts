@@ -63,6 +63,22 @@ describe('Colorbar DOM', () => {
     expect(root.querySelector('.mlr-colorbar-bar')).not.toBeNull();
   });
 
+  it('aligns the title per titleAlign (default left)', () => {
+    const left = mount({ colors: ['#000000', '#ffffff'], title: 'T' });
+    expect(
+      left.root.querySelector<HTMLElement>('.mlr-colorbar-title')!.style.textAlign,
+    ).toBe('left');
+    const centered = mount({
+      colors: ['#000000', '#ffffff'],
+      title: 'T',
+      titleAlign: 'center',
+    });
+    expect(
+      centered.root.querySelector<HTMLElement>('.mlr-colorbar-title')!.style
+        .textAlign,
+    ).toBe('center');
+  });
+
   it('orients vertically and lists ticks max-first', () => {
     const { root } = mount({
       colors: ['#000000', '#ffffff'],

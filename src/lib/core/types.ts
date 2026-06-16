@@ -17,6 +17,8 @@ export interface RasterColorbarState {
   visible: boolean;
   /** Legend title; defaults to the layer name when empty. */
   title?: string;
+  /** Horizontal alignment of the title. @default 'left' */
+  titleAlign?: 'left' | 'center' | 'right';
   /** Unit suffix appended to tick labels. */
   units?: string;
   /** Bar orientation. @default 'horizontal' */

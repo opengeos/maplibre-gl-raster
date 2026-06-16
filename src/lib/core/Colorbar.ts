@@ -26,6 +26,8 @@ export interface ColorbarOptions {
   max?: number;
   /** Title shown above the bar. @default '' */
   title?: string;
+  /** Horizontal alignment of the title. @default 'left' */
+  titleAlign?: 'left' | 'center' | 'right';
   /** Unit suffix appended to every tick label (e.g. 'm', '°C'). @default '' */
   units?: string;
   /** Bar/label layout. @default 'horizontal' */
@@ -55,6 +57,7 @@ const DEFAULTS: ResolvedOptions = {
   min: 0,
   max: 1,
   title: '',
+  titleAlign: 'left',
   units: '',
   orientation: 'horizontal',
   position: 'bottom-right',
@@ -199,7 +202,12 @@ export class Colorbar implements IControl {
     root.replaceChildren();
 
     if (this._opts.title) {
-      root.appendChild(el('div', { className: 'mlr-colorbar-title', text: this._opts.title }));
+      const title = el('div', {
+        className: 'mlr-colorbar-title',
+        text: this._opts.title,
+      });
+      title.style.textAlign = this._opts.titleAlign;
+      root.appendChild(title);
     }
 
     // The bar and the tick strip share the same main-axis length so labels

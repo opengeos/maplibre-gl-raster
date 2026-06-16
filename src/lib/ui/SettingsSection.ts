@@ -614,6 +614,23 @@ export class SettingsSection {
     title.addEventListener('change', () => patch({ title: title.value }));
     wrap.appendChild(field('Legend title', title));
 
+    wrap.appendChild(
+      field(
+        'Title align',
+        select(
+          [
+            { value: 'left', label: 'Left' },
+            { value: 'center', label: 'Center' },
+            { value: 'right', label: 'Right' },
+          ],
+          state.colorbar?.titleAlign ?? 'left',
+          (next) =>
+            patch({ titleAlign: next as 'left' | 'center' | 'right' }),
+          'colorbar-title-align',
+        ),
+      ),
+    );
+
     const units = el('input', {
       className: 'mlr-input',
       type: 'text',
