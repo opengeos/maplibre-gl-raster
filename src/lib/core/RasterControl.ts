@@ -391,6 +391,18 @@ export class RasterControl implements IControl {
     this._layerManager?.reorder(id, toIndex);
   }
 
+  /**
+   * Sets the MapLibre layer a raster draws beneath (interleaved mode), so a host
+   * can interleave rasters with its own vector layers. Pass null to draw the
+   * raster on top. See {@link import('../state/LayerManager').LayerManager.setBeforeId}.
+   *
+   * @param id - The layer id
+   * @param beforeId - The MapLibre style layer id to draw beneath, or null
+   */
+  setRasterBeforeId(id: string, beforeId: string | null): void {
+    this._layerManager?.setBeforeId(id, beforeId);
+  }
+
   /** Re-emits LayerManager events through the control's event system. */
   private _forwardLayerManagerEvents(manager: LayerManager): void {
     for (const type of [

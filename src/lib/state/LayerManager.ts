@@ -400,6 +400,27 @@ export class LayerManager {
   }
 
   /**
+   * Sets the MapLibre layer a raster draws beneath (interleaved mode).
+   *
+   * In interleaved rendering, @deck.gl/mapbox groups raster layers by their
+   * `beforeId`: a layer with no `beforeId` is drawn on top of the whole style,
+   * so a host that interleaves rasters with its own vector layers calls this to
+   * place a raster below a given vector layer. A no-op when the id is unchanged.
+   *
+   * @param id - The layer id
+   * @param beforeId - The MapLibre style layer id to draw beneath, or null/empty
+   *   to draw the raster on top.
+   */
+  setBeforeId(id: string, beforeId: string | null): void {
+    const layer = this.getLayer(id);
+    if (!layer) return;
+    const normalized = beforeId?.trim() || null;
+    if (layer.beforeId === normalized) return;
+    layer.beforeId = normalized;
+    this._rebuild();
+  }
+
+  /**
    * Registers an event handler.
    *
    * @param event - Event type
