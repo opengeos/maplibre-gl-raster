@@ -123,6 +123,32 @@ describe('LayerManager.addRaster', () => {
     expect(manager.getLayer(b)!.beforeId).toBeNull();
   });
 
+  it('updates a raster beforeId and rebuilds with the resolved id', async () => {
+    const { manager, setProps } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif');
+    expect(manager.getLayer(id)!.beforeId).toBeNull();
+    const before = setProps.mock.calls.length;
+
+    manager.setBeforeId(id, 'existing-layer');
+    expect(manager.getLayer(id)!.beforeId).toBe('existing-layer');
+    expect(setProps.mock.calls.length).toBeGreaterThan(before);
+    const layers = setProps.mock.calls.at(-1)![0].layers;
+    expect(layers[0].props.beforeId).toBe('existing-layer');
+  });
+
+  it('trims a blank beforeId to null and no-ops when unchanged', async () => {
+    const { manager, setProps } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif', {
+      beforeId: 'existing-layer',
+    });
+    const before = setProps.mock.calls.length;
+    manager.setBeforeId(id, 'existing-layer'); // unchanged → no rebuild
+    expect(setProps.mock.calls.length).toBe(before);
+    manager.setBeforeId(id, '   '); // blank → null, rebuild
+    expect(manager.getLayer(id)!.beforeId).toBeNull();
+    expect(setProps.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it('creates the overlay once for multiple layers', async () => {
     const { manager, deps } = makeHarness();
     await manager.addRaster('https://example.com/a.tif');
