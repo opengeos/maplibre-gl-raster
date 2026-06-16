@@ -14,6 +14,7 @@ A MapLibre GL JS plugin for visualizing local and remote raster datasets (GeoTIF
 - **GPU rendering pipeline** - Band compositing, per-band rescale, 90+ colormaps, nodata filtering, linear/sqrt/log stretch, and gamma correction as deck.gl shader modules; parameter changes re-render without re-fetching tiles
 - **Auto statistics** - Per-band min/max and histograms sampled from COG overviews (or GDAL metadata), with draggable histogram handles for the rescale range
 - **Pixel inspector** - Toggle inspect mode and click the map to read the raw source values of every band of the selected layer at that location, shown in a popup (works for COGs in any CRS)
+- **Colorbar legend** - A standalone `Colorbar` control: gradient + tick labels for a named colormap (or custom colors), with configurable min/max, title, units, orientation, and position
 - **Collapsible control** - A compact 29x29 map button that expands into a floating panel
 - **TypeScript + React** - Full type definitions, a React wrapper component, and hooks
 - **GeoLibre bundle output** - Builds a zip with root `plugin.json`, bundled ESM, and CSS for GeoLibre Desktop
@@ -191,6 +192,54 @@ const {
 } = useRasterState(initialState);
 ```
 
+### Colorbar
+
+A standalone legend control. Add it like any MapLibre control; it docks into a
+map corner and renders a gradient with tick labels. The ramp is sampled from
+the same colormap sprite the renderer uses, so a named colormap (and the
+`reversed` flag) matches the map exactly — or supply your own `colors`.
+
+```typescript
+import { Colorbar } from "maplibre-gl-raster";
+
+const colorbar = new Colorbar({
+  colormap: "viridis", // or colors: ["#000", "#f00", "#ff0"]
+  min: 0,
+  max: 3000,
+  title: "Elevation",
+  units: "m",
+  orientation: "horizontal", // or "vertical"
+  position: "bottom-right",
+  ticks: 5,
+});
+map.addControl(colorbar);
+```
+
+Keep it in sync with a single-band raster by updating it from the control's
+`rasterchange` event:
+
+```typescript
+control.on("rasterchange", ({ layerId }) => {
+  const info = layerId ? control.getRaster(layerId) : undefined;
+  const range = info?.state.rescale?.[0]; // [min, max] when set explicitly
+  if (info && range) {
+    colorbar.update({
+      colormap: info.state.colormap,
+      min: range[0],
+      max: range[1],
+    });
+  }
+});
+```
+
+`ColorbarOptions`: `colormap?` (default `"viridis"`), `colors?` (custom ramp,
+overrides `colormap`), `reversed?`, `min?` / `max?` (default `0` / `1`),
+`title?`, `units?`, `orientation?` (`"horizontal"` | `"vertical"`, default
+`"horizontal"`), `position?` (map corner, default `"bottom-right"`), `ticks?`
+(count, default `5`), `tickValues?` (explicit ticks), `barLength?` /
+`barThickness?` (px), `className?`. Reconfigure live with
+`colorbar.update(partial)`.
+
 ### Utilities
 
 The package also exports lower-level building blocks for advanced use:
@@ -200,6 +249,8 @@ The package also exports lower-level building blocks for advanced use:
 - `summarizeGeoTIFF(tiff)` - Image / CRS / band / GDAL metadata summary
 - `readBandNames(tiff)` / `percentileFromHistogram(stats, p)`
 - `COLORMAP_NAMES` / `COLORMAP_OPTIONS` / `colormapsPngUrl`
+- `sampleColormapStops(name, steps, reversed?)` / `loadColormapSprite()` / `isKnownColormap(name)` - sample a colormap's colors in plain JS
+- `autoRangeFor(stats)` / `statsForBand(autoStats, band)` - resolve a band's effective rescale range
 - `clamp`, `formatNumericValue`, `generateId`, `debounce`, `throttle`, `classNames`
 
 ## CORS requirements for remote COGs
