@@ -248,6 +248,8 @@ function buildRenderTile(
         props: {
           colormapTexture: mode.colormapTexture,
           colormapIndex: 0,
+          // Palette entries are categorical index→color lookups, so reversing
+          // them is meaningless; state.reversed only affects named colormaps.
           reversed: false,
         },
       });
@@ -281,7 +283,7 @@ function buildRenderTile(
         props: {
           colormapTexture: mode.colormapTexture,
           colormapIndex: mode.colormapIndex,
-          reversed: false,
+          reversed: state.reversed ?? false,
         },
       });
     }

@@ -29,6 +29,10 @@ export interface RasterLayerState {
   /** Colormap name (single-band mode only). 'palette' uses the image's
    * embedded color table; defaults to 'gray'. */
   colormap: string;
+  /** Sample the colormap back-to-front (single-band named colormaps only;
+   * ignored for 'palette', whose entries are categorical). Equivalent to a
+   * reversed variant of the ramp. */
+  reversed: boolean;
   /** Nodata handling. */
   nodata: RasterNodata;
   /** Layer transparency, 0 (invisible) to 1 (fully opaque). */

@@ -119,7 +119,7 @@ The main control class implementing MapLibre's `IControl` interface.
 - `addRaster(source, options?)` - Add a raster from a COG URL (`string`) or a local GeoTIFF `File`; resolves with the layer id
 - `removeRaster(id)` - Remove a raster layer
 - `getRaster(id)` / `getRasters()` - Get layer snapshots (`RasterLayerInfo`)
-- `setRasterState(id, patch)` - Update visualization state (mode, bands, rescale, colormap, nodata, opacity, gamma, stretch, visible)
+- `setRasterState(id, patch)` - Update visualization state (mode, bands, rescale, colormap, reversed, nodata, opacity, gamma, stretch, visible)
 - `setVisible(id, visible)` - Show / hide a layer
 - `selectRaster(id | null)` - Choose which layer the panel's settings edit
 - `zoomToRaster(id)` - Fit the map to a layer's bounds
@@ -150,6 +150,7 @@ interface RasterLayerState {
   bands: number[]; // 1-indexed band selection
   rescale: [number, number][] | null; // per-channel min/max; null = auto (2-98%)
   colormap: string; // colormap name; "palette" = embedded color table
+  reversed: boolean; // sample the named colormap back-to-front
   nodata: number | "off" | "auto"; // nodata handling
   opacity: number; // 0..1
   gamma: number; // power-law correction (1 = off)

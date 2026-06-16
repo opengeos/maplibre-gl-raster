@@ -21,6 +21,7 @@ export const DEFAULT_LAYER_STATE: RasterLayerState = {
   bands: [1, 2, 3],
   rescale: null,
   colormap: 'gray',
+  reversed: false,
   nodata: 'auto',
   opacity: 1,
   gamma: 1,

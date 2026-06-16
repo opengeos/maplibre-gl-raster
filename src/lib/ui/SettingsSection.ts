@@ -29,6 +29,8 @@ const HELP = {
     'Maps a window of source values to the colormap input. Drag the histogram handles, type values, or pick a preset.',
   colormap:
     'Color lookup applied to the rescaled value (after the curve, before nodata).',
+  reversed:
+    'Sample the colormap from end to start, equivalent to a reversed variant of the ramp.',
   nodata:
     "Auto reads the nodata value from the COG's GDAL_NODATA tag (NaN counts as nodata for float data); Value lets you specify one in source units; Off renders every pixel.",
   curve:
@@ -305,6 +307,11 @@ export class SettingsSection {
         },
       });
       this._body.appendChild(field('Colormap', picker.el, HELP.colormap));
+      // Reversing a categorical embedded palette is meaningless, so the toggle
+      // only shows for named colormaps.
+      if (!paletteActive) {
+        this._body.appendChild(this._buildReverseField(state));
+      }
     }
     this._body.appendChild(this._buildNodataField(state));
     if (!paletteActive) {
@@ -536,6 +543,18 @@ export class SettingsSection {
       wrap.appendChild(input);
     }
     return field('Nodata', wrap, HELP.nodata);
+  }
+
+  private _buildReverseField(state: RasterLayerState): HTMLElement {
+    const input = el('input', {
+      type: 'checkbox',
+      ariaLabel: 'Reverse colormap',
+    }) as HTMLInputElement;
+    input.checked = state.reversed ?? false;
+    input.addEventListener('change', () => {
+      this._setState({ reversed: input.checked });
+    });
+    return field('Reverse', input, HELP.reversed);
   }
 
   private _buildCurveField(state: RasterLayerState): HTMLElement {
