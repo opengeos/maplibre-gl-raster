@@ -22,9 +22,11 @@ export {
   readBandNames,
 } from './lib/raster/stats';
 export {
+  COLORMAP_DISPLAY_NAMES,
   COLORMAP_NAMES,
   COLORMAP_OPTIONS,
   COLORMAP_ROW_COUNT,
+  colormapDisplayName,
   colormapsPngUrl,
 } from './lib/raster/colormaps';
 export { PALETTE_COLORMAP } from './lib/ui/ColormapPicker';
