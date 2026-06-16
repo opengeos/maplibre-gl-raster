@@ -21,6 +21,8 @@ export interface RasterColorbarState {
   titleAlign?: 'left' | 'center' | 'right';
   /** Unit suffix appended to tick labels. */
   units?: string;
+  /** Fixed decimal places for tick labels; omitted = compact auto format. */
+  decimals?: number;
   /** Bar orientation. @default 'horizontal' */
   orientation?: ColorbarOrientation;
   /** Map corner to dock the legend in. @default 'bottom-right' */

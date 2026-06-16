@@ -249,9 +249,12 @@ control.on("rasterchange", ({ layerId }) => {
 
 `ColorbarOptions`: `colormap?` (default `"viridis"`), `colors?` (custom ramp,
 overrides `colormap`), `reversed?`, `min?` / `max?` (default `0` / `1`),
-`title?`, `units?`, `orientation?` (`"horizontal"` | `"vertical"`, default
+`title?`, `titleAlign?` (`"left"` | `"center"` | `"right"`), `units?`,
+`stretch?` (`"linear"` | `"log"` | `"sqrt"` — spaces tick values to match the
+layer's stretch), `orientation?` (`"horizontal"` | `"vertical"`, default
 `"horizontal"`), `position?` (map corner, default `"bottom-right"`), `ticks?`
-(count, default `5`), `tickValues?` (explicit ticks), `barLength?` /
+(count, default `5`), `tickValues?` (explicit ticks), `decimals?` (fixed
+decimal places; omit for a compact auto format), `barLength?` /
 `barThickness?` (px), `className?`. Reconfigure live with
 `colorbar.update(partial)`.
 

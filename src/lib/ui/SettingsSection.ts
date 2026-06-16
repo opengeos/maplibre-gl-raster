@@ -251,10 +251,21 @@ export class SettingsSection {
 
   /** Fully rebuilds the section from the selected layer. */
   render(): void {
+    // Preserve the panel's scroll position across the full rebuild: clearing
+    // the body collapses its height and would otherwise snap the scrollable
+    // content area back to the top (e.g. when toggling a stretch preset or the
+    // colormap deep in the panel).
+    const scroller = this.el.closest<HTMLElement>('.mlr-control-content');
+    const savedScroll = scroller?.scrollTop ?? 0;
     const layer = this._getLayer();
     clearEl(this._body);
     this._dirty = false;
     this._syncInspectButton();
+    // Restore after the synchronous rebuild below; the new content is the same
+    // shape, so the prior offset is valid (the browser clamps if it shrank).
+    const restoreScroll = () => {
+      if (scroller) scroller.scrollTop = savedScroll;
+    };
 
     if (!layer) {
       this.el.style.display = 'none';
@@ -326,6 +337,7 @@ export class SettingsSection {
       this._body.appendChild(this._buildGammaField(state));
     }
     this._body.appendChild(this._buildOpacityField(state));
+    restoreScroll();
   }
 
   private _buildModeField(
@@ -640,6 +652,30 @@ export class SettingsSection {
     }) as HTMLInputElement;
     units.addEventListener('change', () => patch({ units: units.value }));
     wrap.appendChild(field('Units', units));
+
+    const decimals = el('input', {
+      className: 'mlr-input',
+      type: 'number',
+      ariaLabel: 'colorbar-decimals',
+      placeholder: 'auto',
+      attrs: { min: '0', max: '10', step: '1' },
+      value:
+        typeof state.colorbar?.decimals === 'number'
+          ? String(state.colorbar.decimals)
+          : '',
+    }) as HTMLInputElement;
+    decimals.addEventListener('change', () => {
+      // Empty input restores the compact auto format.
+      const raw = decimals.value.trim();
+      const parsed = Number(raw);
+      patch({
+        decimals:
+          raw !== '' && Number.isFinite(parsed) && parsed >= 0
+            ? Math.floor(parsed)
+            : undefined,
+      });
+    });
+    wrap.appendChild(field('Decimals', decimals));
 
     wrap.appendChild(
       field(

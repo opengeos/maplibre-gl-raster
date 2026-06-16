@@ -68,6 +68,9 @@ export interface ColorbarOptions {
   ticks?: number;
   /** Explicit tick values, overriding {@link ticks}. */
   tickValues?: number[];
+  /** Fixed number of decimal places for tick labels. When omitted, labels use
+   * a compact auto format (2 decimals for |value| >= 1, else 4 sig figs). */
+  decimals?: number;
   /** Length of the bar along its main axis, in px. @default 180 */
   barLength?: number;
   /** Thickness of the bar across its main axis, in px. @default 12 */
@@ -76,8 +79,10 @@ export interface ColorbarOptions {
   className?: string;
 }
 
-type ResolvedOptions = Required<Omit<ColorbarOptions, 'tickValues' | 'className'>> &
-  Pick<ColorbarOptions, 'tickValues' | 'className'>;
+type ResolvedOptions = Required<
+  Omit<ColorbarOptions, 'tickValues' | 'className' | 'decimals'>
+> &
+  Pick<ColorbarOptions, 'tickValues' | 'className' | 'decimals'>;
 
 const DEFAULTS: ResolvedOptions = {
   colormap: 'viridis',
@@ -93,6 +98,7 @@ const DEFAULTS: ResolvedOptions = {
   position: 'bottom-right',
   ticks: 5,
   tickValues: undefined,
+  decimals: undefined,
   barLength: 180,
   barThickness: 12,
   className: undefined,
@@ -217,10 +223,15 @@ export class Colorbar implements IControl {
     });
   }
 
-  /** Formats a tick value with the configured units suffix. */
+  /** Formats a tick value (fixed decimals when configured, else compact auto)
+   * with the configured units suffix. */
   private _formatTick(value: number): string {
-    const text = String(fmtNumber(value));
-    return this._opts.units ? `${text} ${this._opts.units}` : text;
+    const { decimals, units } = this._opts;
+    const text =
+      typeof decimals === 'number' && Number.isFinite(decimals) && decimals >= 0
+        ? value.toFixed(Math.min(20, Math.floor(decimals)))
+        : String(fmtNumber(value));
+    return units ? `${text} ${units}` : text;
   }
 
   private _render(): void {

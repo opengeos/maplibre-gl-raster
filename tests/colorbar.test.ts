@@ -104,6 +104,28 @@ describe('Colorbar DOM', () => {
     expect(tickText(root)).toEqual(['0', '6.25', '25', '56.25', '100']);
   });
 
+  it('formats ticks with a fixed number of decimals when set', () => {
+    const auto = mount({ colors: ['#000000', '#ffffff'], min: 0, max: 100, ticks: 3 });
+    expect(tickText(auto.root)).toEqual(['0', '50', '100']);
+    const fixed = mount({
+      colors: ['#000000', '#ffffff'],
+      min: 0,
+      max: 100,
+      ticks: 3,
+      decimals: 1,
+    });
+    expect(tickText(fixed.root)).toEqual(['0.0', '50.0', '100.0']);
+    const zero = mount({
+      colors: ['#000000', '#ffffff'],
+      min: 0,
+      max: 3,
+      ticks: 3,
+      decimals: 0,
+      tickValues: [70.23, 331.48, 1115.25],
+    });
+    expect(tickText(zero.root)).toEqual(['70', '331', '1115']);
+  });
+
   it('uses explicit tickValues over the tick count', () => {
     const { root } = mount({ colors: ['#000000', '#ffffff'], tickValues: [1, 2.5, 9] });
     expect(tickText(root)).toEqual(['1', '2.5', '9']);

@@ -506,6 +506,7 @@ export class RasterControl implements IControl {
       title: cb?.title?.trim() ? cb.title : layer.name,
       titleAlign: cb?.titleAlign ?? 'left',
       units: cb?.units ?? '',
+      decimals: cb?.decimals,
       orientation: cb?.orientation ?? 'horizontal',
       position: cb?.position ?? 'bottom-right',
     };
