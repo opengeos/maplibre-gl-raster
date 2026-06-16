@@ -554,7 +554,15 @@ export class SettingsSection {
     input.addEventListener('change', () => {
       this._setState({ reversed: input.checked });
     });
-    return field('Reverse', input, HELP.reversed);
+    // A lone checkbox reads better inline with its label than stacked under a
+    // field caption, so this row skips the field() label/content layout.
+    const row = el(
+      'label',
+      { className: 'mlr-check', title: HELP.reversed },
+      input,
+      el('span', { text: 'Reverse colormap' }),
+    );
+    return el('div', { className: 'mlr-field' }, row);
   }
 
   private _buildCurveField(state: RasterLayerState): HTMLElement {
