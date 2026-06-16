@@ -1,4 +1,7 @@
+import type { ControlPosition } from 'maplibre-gl';
+import type { ColorbarOrientation } from '../core/Colorbar';
 import type {
+  RasterColorbarState,
   RasterLayerState,
   RasterMode,
   RasterStretch,
@@ -31,6 +34,8 @@ const HELP = {
     'Color lookup applied to the rescaled value (after the curve, before nodata).',
   reversed:
     'Sample the colormap from end to start, equivalent to a reversed variant of the ramp.',
+  colorbar:
+    "Show a legend on the map for this layer's colormap and value range.",
   nodata:
     "Auto reads the nodata value from the COG's GDAL_NODATA tag (NaN counts as nodata for float data); Value lets you specify one in source units; Off renders every pixel.",
   curve:
@@ -308,9 +313,11 @@ export class SettingsSection {
       });
       this._body.appendChild(field('Colormap', picker.el, HELP.colormap));
       // Reversing a categorical embedded palette is meaningless, so the toggle
-      // only shows for named colormaps.
+      // only shows for named colormaps. The colorbar legend likewise needs a
+      // continuous range, so it is offered for named colormaps too.
       if (!paletteActive) {
         this._body.appendChild(this._buildReverseField(state));
+        this._body.appendChild(this._buildColorbarField(state));
       }
     }
     this._body.appendChild(this._buildNodataField(state));
@@ -563,6 +570,93 @@ export class SettingsSection {
       el('span', { text: 'Reverse colormap' }),
     );
     return el('div', { className: 'mlr-field' }, row);
+  }
+
+  private _buildColorbarField(state: RasterLayerState): HTMLElement {
+    // Read the live colorbar state on each edit (not this render's snapshot) so
+    // editing one field never clobbers another set since the last render.
+    const patch = (next: Partial<RasterColorbarState>): void => {
+      const current = this._getLayer()?.state.colorbar;
+      this._setState({ colorbar: { visible: true, ...current, ...next } });
+    };
+
+    const toggle = el('input', {
+      type: 'checkbox',
+      ariaLabel: 'Show colorbar',
+    }) as HTMLInputElement;
+    const visible = state.colorbar?.visible ?? false;
+    toggle.checked = visible;
+    toggle.addEventListener('change', () => {
+      const current = this._getLayer()?.state.colorbar;
+      this._setState({ colorbar: { ...current, visible: toggle.checked } });
+      // Reveal / hide the title / orientation / position controls.
+      this.render();
+    });
+    const wrap = el(
+      'div',
+      { className: 'mlr-field' },
+      el(
+        'label',
+        { className: 'mlr-check', title: HELP.colorbar },
+        toggle,
+        el('span', { text: 'Show colorbar' }),
+      ),
+    );
+    if (!visible) return wrap;
+
+    const title = el('input', {
+      className: 'mlr-input',
+      type: 'text',
+      ariaLabel: 'colorbar-title',
+      placeholder: 'Layer name',
+      value: state.colorbar?.title ?? '',
+    }) as HTMLInputElement;
+    title.addEventListener('change', () => patch({ title: title.value }));
+    wrap.appendChild(field('Legend title', title));
+
+    const units = el('input', {
+      className: 'mlr-input',
+      type: 'text',
+      ariaLabel: 'colorbar-units',
+      placeholder: 'e.g. m',
+      value: state.colorbar?.units ?? '',
+    }) as HTMLInputElement;
+    units.addEventListener('change', () => patch({ units: units.value }));
+    wrap.appendChild(field('Units', units));
+
+    wrap.appendChild(
+      field(
+        'Orientation',
+        select(
+          [
+            { value: 'horizontal', label: 'Horizontal' },
+            { value: 'vertical', label: 'Vertical' },
+          ],
+          state.colorbar?.orientation ?? 'horizontal',
+          (next) => patch({ orientation: next as ColorbarOrientation }),
+          'colorbar-orientation',
+        ),
+      ),
+    );
+
+    wrap.appendChild(
+      field(
+        'Position',
+        select(
+          [
+            { value: 'top-left', label: 'Top left' },
+            { value: 'top-right', label: 'Top right' },
+            { value: 'bottom-left', label: 'Bottom left' },
+            { value: 'bottom-right', label: 'Bottom right' },
+          ],
+          state.colorbar?.position ?? 'bottom-right',
+          (next) => patch({ position: next as ControlPosition }),
+          'colorbar-position',
+        ),
+      ),
+    );
+
+    return wrap;
   }
 
   private _buildCurveField(state: RasterLayerState): HTMLElement {

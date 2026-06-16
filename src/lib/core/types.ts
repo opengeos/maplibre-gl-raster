@@ -1,9 +1,29 @@
 import type { EpsgResolver } from '@developmentseed/proj';
-import type { Map } from 'maplibre-gl';
+import type { ControlPosition, Map } from 'maplibre-gl';
+import type { ColorbarOrientation } from './Colorbar';
 
 /** Rendering mode: RGB composite (one band per channel) or single band
  * through a colormap. */
 export type RasterMode = 'rgb' | 'single';
+
+/**
+ * Per-layer colorbar legend config. When `visible`, the control shows a
+ * {@link import('./Colorbar').Colorbar} for the (single-band) layer, driven by
+ * its colormap, `reversed` flag, and effective rescale range. The fields here
+ * are the parts the data can't supply.
+ */
+export interface RasterColorbarState {
+  /** Whether the legend is shown for this layer. */
+  visible: boolean;
+  /** Legend title; defaults to the layer name when empty. */
+  title?: string;
+  /** Unit suffix appended to tick labels. */
+  units?: string;
+  /** Bar orientation. @default 'horizontal' */
+  orientation?: ColorbarOrientation;
+  /** Map corner to dock the legend in. @default 'bottom-right' */
+  position?: ControlPosition;
+}
 
 /** Curve applied to the rescaled [0, 1] value before gamma / colormap.
  * "log" expands the low-value range (useful for skewed data with most
@@ -43,6 +63,8 @@ export interface RasterLayerState {
   stretch: RasterStretch;
   /** Whether the layer is drawn on the map. */
   visible: boolean;
+  /** Optional colorbar legend shown on the map for this layer. */
+  colorbar?: RasterColorbarState;
 }
 
 /** Where a raster layer's data came from. */

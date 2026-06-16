@@ -1,9 +1,11 @@
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl';
 import { createResilientEpsgResolver } from '../raster/epsg-resolver';
+import { autoRangeFor, statsForBand } from '../raster/render-pipeline';
 import { LayerManager } from '../state/LayerManager';
 import { PixelInspector } from '../state/PixelInspector';
-import { toLayerInfo } from '../state/RasterLayer';
+import { type RasterLayer, toLayerInfo } from '../state/RasterLayer';
 import { PanelUI } from '../ui/PanelUI';
+import { Colorbar, type ColorbarOptions } from './Colorbar';
 import type {
   AddRasterOptions,
   RasterControlEvent,
@@ -61,6 +63,8 @@ export class RasterControl implements IControl {
   private _panelUI?: PanelUI;
   private _inspector?: PixelInspector;
   private _onReady: (() => void)[] = [];
+  /** On-map colorbar legends, one per layer whose `state.colorbar.visible`. */
+  private _colorbars = new globalThis.Map<string, Colorbar>();
 
   // Panel positioning handlers
   private _resizeHandler: (() => void) | null = null;
@@ -160,6 +164,7 @@ export class RasterControl implements IControl {
   onRemove(): void {
     // Tear down the raster machinery first (removes the deck.gl overlay,
     // aborts in-flight loads, revokes blob URLs).
+    this._removeAllColorbars();
     this._panelUI?.destroy();
     this._panelUI = undefined;
     this._inspector?.destroy();
@@ -412,10 +417,91 @@ export class RasterControl implements IControl {
       'rasterselect',
       'error',
     ] as const) {
-      manager.on(type, (e) =>
-        this._emit(type, { layerId: e.layerId, error: e.error }),
-      );
+      manager.on(type, (e) => {
+        // Reconcile on-map colorbars before re-emitting, so a host's handler
+        // observing the event already sees the legend in sync.
+        if (type !== 'error') this._syncColorbars();
+        this._emit(type, { layerId: e.layerId, error: e.error });
+      });
     }
+  }
+
+  /**
+   * Reconciles the on-map colorbar legends with the layers' colorbar state:
+   * adds/updates a {@link Colorbar} for each single-band layer whose
+   * `state.colorbar.visible` is set, and removes the rest. Driven by
+   * LayerManager change events, so the panel only has to write
+   * `state.colorbar`.
+   */
+  private _syncColorbars(): void {
+    const map = this._map;
+    const manager = this._layerManager;
+    if (!map || !manager) return;
+
+    const seen = new Set<string>();
+    for (const layer of manager.getLayers()) {
+      const cb = layer.state.colorbar;
+      // A legend only makes sense for a visible single-band named colormap
+      // (palette entries are categorical, with no numeric range to label).
+      if (
+        !cb?.visible ||
+        !layer.state.visible ||
+        layer.state.mode !== 'single' ||
+        layer.state.colormap === 'palette'
+      ) {
+        continue;
+      }
+      seen.add(layer.id);
+      const options = this._colorbarOptionsFor(layer);
+      const existing = this._colorbars.get(layer.id);
+      if (!existing) {
+        const bar = new Colorbar(options);
+        this._colorbars.set(layer.id, bar);
+        map.addControl(bar, options.position);
+      } else if (existing.getOptions().position !== options.position) {
+        // MapLibre fixes a control's corner at addControl time, so a position
+        // change requires removing and re-adding the legend.
+        map.removeControl(existing);
+        const bar = new Colorbar(options);
+        this._colorbars.set(layer.id, bar);
+        map.addControl(bar, options.position);
+      } else {
+        existing.update(options);
+      }
+    }
+
+    for (const [id, bar] of [...this._colorbars]) {
+      if (!seen.has(id)) {
+        map.removeControl(bar);
+        this._colorbars.delete(id);
+      }
+    }
+  }
+
+  /** Builds colorbar options from a layer's colormap, reverse flag, and
+   * effective rescale range (explicit window, else auto-stats percentile). */
+  private _colorbarOptionsFor(layer: RasterLayer): ColorbarOptions {
+    const band = layer.state.bands[0] ?? 1;
+    const stats = statsForBand(layer.autoStats, band);
+    const range: [number, number] =
+      layer.state.rescale?.[0] ?? (stats ? autoRangeFor(stats) : [0, 1]);
+    const cb = layer.state.colorbar;
+    return {
+      colormap: layer.state.colormap,
+      reversed: layer.state.reversed,
+      min: range[0],
+      max: range[1],
+      title: cb?.title?.trim() ? cb.title : layer.name,
+      units: cb?.units ?? '',
+      orientation: cb?.orientation ?? 'horizontal',
+      position: cb?.position ?? 'bottom-right',
+    };
+  }
+
+  /** Removes all on-map colorbar legends. */
+  private _removeAllColorbars(): void {
+    for (const bar of this._colorbars.values()) this._map?.removeControl(bar);
+    this._colorbars.clear();
   }
 
   /**

@@ -157,6 +157,14 @@ interface RasterLayerState {
   gamma: number; // power-law correction (1 = off)
   stretch: "linear" | "log" | "sqrt"; // curve applied after rescale
   visible: boolean;
+  colorbar?: {
+    // optional on-map legend for this single-band layer
+    visible: boolean;
+    title?: string;
+    units?: string;
+    orientation?: "horizontal" | "vertical";
+    position?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  };
 }
 ```
 
@@ -194,10 +202,17 @@ const {
 
 ### Colorbar
 
-A standalone legend control. Add it like any MapLibre control; it docks into a
-map corner and renders a gradient with tick labels. The ramp is sampled from
-the same colormap sprite the renderer uses, so a named colormap (and the
-`reversed` flag) matches the map exactly — or supply your own `colors`.
+The settings panel has a **"Show colorbar"** toggle for single-band layers
+(with title, units, orientation, and position controls). Enabling it shows a
+legend on the map driven by that layer's colormap, `reversed` flag, and
+effective value range, and it follows rescale / colormap changes live. This is
+persisted per layer in `RasterLayerState.colorbar`.
+
+You can also use the legend directly as a standalone control. Add it like any
+MapLibre control; it docks into a map corner and renders a gradient with tick
+labels. The ramp is sampled from the same colormap sprite the renderer uses, so
+a named colormap (and the `reversed` flag) matches the map exactly — or supply
+your own `colors`.
 
 ```typescript
 import { Colorbar } from "maplibre-gl-raster";

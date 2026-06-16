@@ -114,3 +114,69 @@ describe('SettingsSection reverse colormap', () => {
     expect(findReverse(section)).toBeNull();
   });
 });
+
+const findColorbar = (section: SettingsSection) =>
+  section.el.querySelector<HTMLInputElement>('[aria-label="Show colorbar"]');
+
+describe('SettingsSection colorbar', () => {
+  it('renders an unchecked colorbar toggle for a single-band layer', () => {
+    const layer = loadedSingleLayer();
+    const section = new SettingsSection(() => layer, () => {});
+    section.render();
+    const box = findColorbar(section);
+    expect(box).not.toBeNull();
+    expect(box!.checked).toBe(false);
+    // The sub-controls are hidden until the legend is enabled.
+    expect(
+      section.el.querySelector('[aria-label="colorbar-position"]'),
+    ).toBeNull();
+  });
+
+  it('enables the legend on toggle', () => {
+    const patches: Partial<RasterLayerState>[] = [];
+    const layer = loadedSingleLayer();
+    const section = new SettingsSection(() => layer, (p) => patches.push(p));
+    section.render();
+    const box = findColorbar(section)!;
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    expect(patches).toContainEqual({ colorbar: { visible: true } });
+  });
+
+  it('shows title/units/orientation/position when visible', () => {
+    const layer = loadedSingleLayer({ colorbar: { visible: true } });
+    const section = new SettingsSection(() => layer, () => {});
+    section.render();
+    expect(findColorbar(section)!.checked).toBe(true);
+    expect(section.el.querySelector('[aria-label="colorbar-title"]')).not.toBeNull();
+    expect(section.el.querySelector('[aria-label="colorbar-units"]')).not.toBeNull();
+    expect(
+      section.el.querySelector('[aria-label="colorbar-orientation"]'),
+    ).not.toBeNull();
+    expect(
+      section.el.querySelector('[aria-label="colorbar-position"]'),
+    ).not.toBeNull();
+  });
+
+  it('patches a field while preserving visibility', () => {
+    const patches: Partial<RasterLayerState>[] = [];
+    const layer = loadedSingleLayer({ colorbar: { visible: true } });
+    const section = new SettingsSection(() => layer, (p) => patches.push(p));
+    section.render();
+    const pos = section.el.querySelector<HTMLSelectElement>(
+      '[aria-label="colorbar-position"]',
+    )!;
+    pos.value = 'top-right';
+    pos.dispatchEvent(new Event('change'));
+    expect(patches).toContainEqual({
+      colorbar: { visible: true, position: 'top-right' },
+    });
+  });
+
+  it('omits the colorbar controls in RGB mode', () => {
+    const layer = loadedSingleLayer({ mode: 'rgb', bands: [1, 2, 3] });
+    const section = new SettingsSection(() => layer, () => {});
+    section.render();
+    expect(findColorbar(section)).toBeNull();
+  });
+});
