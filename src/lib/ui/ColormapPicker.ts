@@ -1,28 +1,15 @@
-import { COLORMAP_OPTIONS, colormapsPngUrl } from '../raster/colormaps';
+import {
+  COLORMAP_SPRITE_WIDTH as SPRITE_WIDTH,
+  loadColormapSprite as loadSprite,
+} from '../raster/colormap-sampler';
+import { COLORMAP_OPTIONS } from '../raster/colormaps';
 import type { BandStats } from '../raster/stats';
 import { el, select } from './dom';
 
 const PREVIEW_HEIGHT = 14;
-const SPRITE_WIDTH = 256;
 
 /** Sentinel colormap name for the image's embedded color table. */
 export const PALETTE_COLORMAP = 'palette';
-
-// The colormap sprite has one 1px-tall row per colormap. Decode it once;
-// previews blit a single source row so neighboring rows can never bleed in
-// (CSS background scaling interpolates across rows, producing artifacts).
-let spritePromise: Promise<HTMLImageElement> | null = null;
-function loadSprite(): Promise<HTMLImageElement> {
-  if (!spritePromise) {
-    spritePromise = new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Failed to load colormap sprite'));
-      img.src = colormapsPngUrl;
-    });
-  }
-  return spritePromise;
-}
 
 export type ColormapPickerOptions = {
   /** Active colormap name (or {@link PALETTE_COLORMAP}). */

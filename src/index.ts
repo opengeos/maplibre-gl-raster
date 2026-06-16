@@ -3,9 +3,16 @@ import './lib/styles/raster-control.css';
 
 // Main entry point - Core exports
 export { RasterControl } from './lib/core/RasterControl';
+export { Colorbar } from './lib/core/Colorbar';
 
 // Raster utilities for advanced use
 export { loadGeoTIFF } from './lib/raster/load-geotiff';
+export {
+  isKnownColormap,
+  loadColormapSprite,
+  sampleColormapStops,
+} from './lib/raster/colormap-sampler';
+export { autoRangeFor, statsForBand } from './lib/raster/render-pipeline';
 export { createResilientEpsgResolver } from './lib/raster/epsg-resolver';
 export { summarizeGeoTIFF } from './lib/raster/metadata';
 export {
@@ -15,14 +22,21 @@ export {
   readBandNames,
 } from './lib/raster/stats';
 export {
+  COLORMAP_DISPLAY_NAMES,
   COLORMAP_NAMES,
   COLORMAP_OPTIONS,
   COLORMAP_ROW_COUNT,
+  colormapDisplayName,
   colormapsPngUrl,
 } from './lib/raster/colormaps';
 export { PALETTE_COLORMAP } from './lib/ui/ColormapPicker';
 
 // Type exports
+export type {
+  ColorbarOptions,
+  ColorbarOrientation,
+  ColorbarStretch,
+} from './lib/core/Colorbar';
 export type {
   AddRasterOptions,
   GeographicBounds,

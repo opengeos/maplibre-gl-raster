@@ -1,4 +1,7 @@
+import type { ControlPosition } from 'maplibre-gl';
+import type { ColorbarOrientation } from '../core/Colorbar';
 import type {
+  RasterColorbarState,
   RasterLayerState,
   RasterMode,
   RasterStretch,
@@ -29,6 +32,10 @@ const HELP = {
     'Maps a window of source values to the colormap input. Drag the histogram handles, type values, or pick a preset.',
   colormap:
     'Color lookup applied to the rescaled value (after the curve, before nodata).',
+  reversed:
+    'Sample the colormap from end to start, equivalent to a reversed variant of the ramp.',
+  colorbar:
+    "Show a legend on the map for this layer's colormap and value range.",
   nodata:
     "Auto reads the nodata value from the COG's GDAL_NODATA tag (NaN counts as nodata for float data); Value lets you specify one in source units; Off renders every pixel.",
   curve:
@@ -244,10 +251,21 @@ export class SettingsSection {
 
   /** Fully rebuilds the section from the selected layer. */
   render(): void {
+    // Preserve the panel's scroll position across the full rebuild: clearing
+    // the body collapses its height and would otherwise snap the scrollable
+    // content area back to the top (e.g. when toggling a stretch preset or the
+    // colormap deep in the panel).
+    const scroller = this.el.closest<HTMLElement>('.mlr-control-content');
+    const savedScroll = scroller?.scrollTop ?? 0;
     const layer = this._getLayer();
     clearEl(this._body);
     this._dirty = false;
     this._syncInspectButton();
+    // Restore after the synchronous rebuild below; the new content is the same
+    // shape, so the prior offset is valid (the browser clamps if it shrank).
+    const restoreScroll = () => {
+      if (scroller) scroller.scrollTop = savedScroll;
+    };
 
     if (!layer) {
       this.el.style.display = 'none';
@@ -305,6 +323,13 @@ export class SettingsSection {
         },
       });
       this._body.appendChild(field('Colormap', picker.el, HELP.colormap));
+      // Reversing a categorical embedded palette is meaningless, so the toggle
+      // only shows for named colormaps. The colorbar legend likewise needs a
+      // continuous range, so it is offered for named colormaps too.
+      if (!paletteActive) {
+        this._body.appendChild(this._buildReverseField(state));
+        this._body.appendChild(this._buildColorbarField(state));
+      }
     }
     this._body.appendChild(this._buildNodataField(state));
     if (!paletteActive) {
@@ -312,6 +337,7 @@ export class SettingsSection {
       this._body.appendChild(this._buildGammaField(state));
     }
     this._body.appendChild(this._buildOpacityField(state));
+    restoreScroll();
   }
 
   private _buildModeField(
@@ -536,6 +562,154 @@ export class SettingsSection {
       wrap.appendChild(input);
     }
     return field('Nodata', wrap, HELP.nodata);
+  }
+
+  private _buildReverseField(state: RasterLayerState): HTMLElement {
+    const input = el('input', {
+      type: 'checkbox',
+      ariaLabel: 'Reverse colormap',
+    }) as HTMLInputElement;
+    input.checked = state.reversed ?? false;
+    input.addEventListener('change', () => {
+      this._setState({ reversed: input.checked });
+    });
+    // A lone checkbox reads better inline with its label than stacked under a
+    // field caption, so this row skips the field() label/content layout.
+    const row = el(
+      'label',
+      { className: 'mlr-check', title: HELP.reversed },
+      input,
+      el('span', { text: 'Reverse colormap' }),
+    );
+    return el('div', { className: 'mlr-field' }, row);
+  }
+
+  private _buildColorbarField(state: RasterLayerState): HTMLElement {
+    // Read the live colorbar state on each edit (not this render's snapshot) so
+    // editing one field never clobbers another set since the last render.
+    const patch = (next: Partial<RasterColorbarState>): void => {
+      const current = this._getLayer()?.state.colorbar;
+      this._setState({ colorbar: { visible: true, ...current, ...next } });
+    };
+
+    const toggle = el('input', {
+      type: 'checkbox',
+      ariaLabel: 'Show colorbar',
+    }) as HTMLInputElement;
+    const visible = state.colorbar?.visible ?? false;
+    toggle.checked = visible;
+    toggle.addEventListener('change', () => {
+      const current = this._getLayer()?.state.colorbar;
+      this._setState({ colorbar: { ...current, visible: toggle.checked } });
+      // Reveal / hide the title / orientation / position controls.
+      this.render();
+    });
+    const wrap = el(
+      'div',
+      { className: 'mlr-field' },
+      el(
+        'label',
+        { className: 'mlr-check', title: HELP.colorbar },
+        toggle,
+        el('span', { text: 'Show colorbar' }),
+      ),
+    );
+    if (!visible) return wrap;
+
+    const title = el('input', {
+      className: 'mlr-input',
+      type: 'text',
+      ariaLabel: 'colorbar-title',
+      placeholder: 'Layer name',
+      value: state.colorbar?.title ?? '',
+    }) as HTMLInputElement;
+    title.addEventListener('change', () => patch({ title: title.value }));
+    wrap.appendChild(field('Legend title', title));
+
+    wrap.appendChild(
+      field(
+        'Title align',
+        select(
+          [
+            { value: 'left', label: 'Left' },
+            { value: 'center', label: 'Center' },
+            { value: 'right', label: 'Right' },
+          ],
+          state.colorbar?.titleAlign ?? 'left',
+          (next) =>
+            patch({ titleAlign: next as 'left' | 'center' | 'right' }),
+          'colorbar-title-align',
+        ),
+      ),
+    );
+
+    const units = el('input', {
+      className: 'mlr-input',
+      type: 'text',
+      ariaLabel: 'colorbar-units',
+      placeholder: 'e.g. m',
+      value: state.colorbar?.units ?? '',
+    }) as HTMLInputElement;
+    units.addEventListener('change', () => patch({ units: units.value }));
+    wrap.appendChild(field('Units', units));
+
+    const decimals = el('input', {
+      className: 'mlr-input',
+      type: 'number',
+      ariaLabel: 'colorbar-decimals',
+      placeholder: 'auto',
+      attrs: { min: '0', max: '10', step: '1' },
+      value:
+        typeof state.colorbar?.decimals === 'number'
+          ? String(state.colorbar.decimals)
+          : '',
+    }) as HTMLInputElement;
+    decimals.addEventListener('change', () => {
+      // Empty input restores the compact auto format.
+      const raw = decimals.value.trim();
+      const parsed = Number(raw);
+      patch({
+        decimals:
+          raw !== '' && Number.isFinite(parsed) && parsed >= 0
+            ? Math.floor(parsed)
+            : undefined,
+      });
+    });
+    wrap.appendChild(field('Decimals', decimals));
+
+    wrap.appendChild(
+      field(
+        'Orientation',
+        select(
+          [
+            { value: 'horizontal', label: 'Horizontal' },
+            { value: 'vertical', label: 'Vertical' },
+          ],
+          state.colorbar?.orientation ?? 'horizontal',
+          (next) => patch({ orientation: next as ColorbarOrientation }),
+          'colorbar-orientation',
+        ),
+      ),
+    );
+
+    wrap.appendChild(
+      field(
+        'Position',
+        select(
+          [
+            { value: 'top-left', label: 'Top left' },
+            { value: 'top-right', label: 'Top right' },
+            { value: 'bottom-left', label: 'Bottom left' },
+            { value: 'bottom-right', label: 'Bottom right' },
+          ],
+          state.colorbar?.position ?? 'bottom-right',
+          (next) => patch({ position: next as ControlPosition }),
+          'colorbar-position',
+        ),
+      ),
+    );
+
+    return wrap;
   }
 
   private _buildCurveField(state: RasterLayerState): HTMLElement {
