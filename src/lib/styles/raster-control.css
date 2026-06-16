@@ -8,7 +8,8 @@
 
 .mlr-control,
 .mlr-control-panel,
-.mlr-inspect-popup {
+.mlr-inspect-popup,
+.mlr-colorbar {
   --mlr-bg: #fff;
   --mlr-surface-muted: #f1f3f5;
   --mlr-surface-soft: #f7f8f9;
@@ -39,7 +40,8 @@
 @media (prefers-color-scheme: dark) {
   .mlr-control,
   .mlr-control-panel,
-  .mlr-inspect-popup {
+  .mlr-inspect-popup,
+  .mlr-colorbar {
     --mlr-bg: #23282e;
     --mlr-surface-muted: #2e343b;
     --mlr-surface-soft: #2a3036;
@@ -66,6 +68,40 @@
 
     color-scheme: dark;
   }
+}
+
+/* Host-controlled dark theme: an app that toggles a `.dark` class (e.g.
+   GeoLibre, which sets it on <html>) themes the controls and colorbar to
+   match, overriding the OS prefers-color-scheme default above. */
+.dark .mlr-control,
+.dark .mlr-control-panel,
+.dark .mlr-inspect-popup,
+.dark .mlr-colorbar {
+  --mlr-bg: #23282e;
+  --mlr-surface-muted: #2e343b;
+  --mlr-surface-soft: #2a3036;
+  --mlr-text: #e3e6e9;
+  --mlr-text-strong: #f0f2f4;
+  --mlr-text-soft: #c4cad0;
+  --mlr-text-muted: #9aa3ab;
+  --mlr-text-faint: #828b93;
+  --mlr-border: #454d55;
+  --mlr-border-soft: #3a4148;
+  --mlr-border-faint: #343b42;
+  --mlr-border-strong: #525a63;
+  --mlr-accent: #5b9ce0;
+  --mlr-accent-strong: #6faae6;
+  --mlr-accent-soft: rgba(91, 156, 224, 0.2);
+  --mlr-hover: rgba(255, 255, 255, 0.08);
+  --mlr-error: #e07b6e;
+  --mlr-disabled-bg: #4a5158;
+  --mlr-disabled-text: #5f666d;
+  --mlr-scrollbar: #4a5158;
+  --mlr-scrollbar-hover: #5f666d;
+  --mlr-shadow: rgba(0, 0, 0, 0.35);
+  --mlr-histogram-neutral: #cfd6dd;
+
+  color-scheme: dark;
 }
 
 /* Container - matches maplibregl-ctrl styling. The doubled selector
@@ -127,7 +163,10 @@
   min-width: 240px;
   max-width: 420px;
   max-height: min(80vh, 720px);
-  overflow-y: auto;
+  /* The content area is the scroller; the panel clips so the resize handle
+     (an absolutely-positioned child) stays pinned to the corner and never
+     scrolls away with the content. */
+  overflow: hidden;
   z-index: 1000;
   padding: 8px;
   font-size: 12px;
@@ -135,8 +174,33 @@
   display: none;
 }
 
+/* Flex column so the header keeps its height and the content flexes to fill
+   the panel (whether the panel auto-sizes to content up to max-height, or the
+   user has set an explicit size via the resize handle). */
 .mlr-control-panel.expanded {
-  display: block;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Engine-independent resize affordance (CSS `resize` is unreliable in
+   WebKitGTK). Placed at the panel's inward corner by _addResizeHandle(). */
+.mlr-control-resize {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  z-index: 5;
+  color: var(--mlr-text-faint);
+  opacity: 0.55;
+  touch-action: none;
+  background-image: repeating-linear-gradient(
+    135deg,
+    currentColor 0 1px,
+    transparent 1px 3px
+  );
+}
+
+.mlr-control-resize:hover {
+  opacity: 0.9;
 }
 
 /* Panel header */
@@ -179,7 +243,11 @@
 
 /* Content */
 .mlr-control-content {
-  max-height: min(72vh, 660px);
+  /* Flex child of the panel column: fill the remaining height and scroll.
+     min-height: 0 lets it shrink below its content so the scrollbar engages
+     instead of overflowing the panel. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   /* Histogram drag handles are centered on the chart edges and poke a few
      pixels past the content box; clip them instead of growing a horizontal
@@ -686,32 +754,19 @@
   image-rendering: auto;
 }
 
-/* Colorbar legend (a standalone IControl docked in a map corner) */
+/* Colorbar legend (a standalone IControl docked in a map corner). It shares
+   the --mlr-* theme variables defined above, so it follows both the OS
+   prefers-color-scheme and a host `.dark` class. */
 .mlr-colorbar {
-  --mlr-bg: #fff;
-  --mlr-text: #333;
-  --mlr-text-soft: #555;
-  --mlr-border: #ddd;
-  --mlr-shadow: rgba(0, 0, 0, 0.1);
   box-sizing: border-box;
   padding: 8px 10px;
   background: var(--mlr-bg);
   color: var(--mlr-text);
+  border: 1px solid var(--mlr-border-faint);
   border-radius: 4px;
   box-shadow: 0 1px 4px var(--mlr-shadow);
   font: 11px/1.3 system-ui, sans-serif;
   user-select: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  .mlr-colorbar {
-    --mlr-bg: #2b2f33;
-    --mlr-text: #e6e6e6;
-    --mlr-text-soft: #b8b8b8;
-    --mlr-border: #555;
-    --mlr-shadow: rgba(0, 0, 0, 0.4);
-    color-scheme: dark;
-  }
 }
 
 .mlr-colorbar-title {

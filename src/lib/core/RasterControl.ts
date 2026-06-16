@@ -31,6 +31,12 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   epsgResolver: createResilientEpsgResolver(),
 };
 
+/** Smallest user-resized panel footprint. */
+const PANEL_MIN_WIDTH = 260;
+const PANEL_MIN_HEIGHT = 180;
+/** Breathing room kept between a resized panel and the map edges. */
+const PANEL_EDGE_MARGIN = 12;
+
 /**
  * Event handlers map type
  */
@@ -65,6 +71,10 @@ export class RasterControl implements IControl {
   private _onReady: (() => void)[] = [];
   /** On-map colorbar legends, one per layer whose `state.colorbar.visible`. */
   private _colorbars = new globalThis.Map<string, Colorbar>();
+  /** User-chosen panel size from the resize handle, re-applied on reposition. */
+  private _userPanelSize: { width: number; height: number } | null = null;
+  /** Repositions the resize handle to the panel's inward corner. */
+  private _placeResizeHandle: (() => void) | null = null;
 
   // Panel positioning handlers
   private _resizeHandler: (() => void) | null = null;
@@ -590,8 +600,115 @@ export class RasterControl implements IControl {
 
     panel.appendChild(header);
     panel.appendChild(content);
+    this._addResizeHandle(panel);
 
     return panel;
+  }
+
+  /**
+   * Adds a drag handle that resizes the panel in both dimensions. The panel is
+   * absolutely positioned and anchored to its docking corner, so a custom
+   * handle is used instead of CSS `resize` (which is unreliable in WebKitGTK):
+   * it sits at the panel's inward corner and grows toward the map interior, in
+   * any corner. The anchored edges stay fixed; only width/height change.
+   *
+   * @param panel - The panel element to make resizable.
+   */
+  private _addResizeHandle(panel: HTMLElement): void {
+    const handle = document.createElement('div');
+    handle.className = 'mlr-control-resize';
+    handle.setAttribute('aria-hidden', 'true');
+    panel.appendChild(handle);
+
+    const placeHandle = (): void => {
+      const pos = this._getControlPosition();
+      const right = pos.endsWith('right');
+      const bottom = pos.startsWith('bottom');
+      handle.style.top = bottom ? '0' : 'auto';
+      handle.style.bottom = bottom ? 'auto' : '0';
+      handle.style.left = right ? '0' : 'auto';
+      handle.style.right = right ? 'auto' : '0';
+      handle.style.cursor = right === bottom ? 'nwse-resize' : 'nesw-resize';
+    };
+    placeHandle();
+    this._placeResizeHandle = placeHandle;
+
+    let right = false;
+    let bottom = false;
+    let startX = 0;
+    let startY = 0;
+    let startW = 0;
+    let startH = 0;
+    let maxW = Infinity;
+    let maxH = Infinity;
+
+    const onMove = (event: PointerEvent): void => {
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      const width = Math.min(maxW, Math.max(PANEL_MIN_WIDTH, right ? startW - dx : startW + dx));
+      const height = Math.min(maxH, Math.max(PANEL_MIN_HEIGHT, bottom ? startH - dy : startH + dy));
+      this._userPanelSize = { width, height };
+      this._applyUserPanelSize();
+    };
+    const onUp = (event: PointerEvent): void => {
+      handle.releasePointerCapture?.(event.pointerId);
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+    };
+    handle.addEventListener('pointerdown', (event) => {
+      if (!this._panel || !this._mapContainer) return;
+      event.preventDefault();
+      event.stopPropagation();
+      placeHandle();
+      const pos = this._getControlPosition();
+      right = pos.endsWith('right');
+      bottom = pos.startsWith('bottom');
+      const mapRect = this._mapContainer.getBoundingClientRect();
+      const rect = this._panel.getBoundingClientRect();
+      startX = event.clientX;
+      startY = event.clientY;
+      startW = rect.width;
+      startH = rect.height;
+      // The anchored edge is fixed, so the room to grow is constant for the
+      // whole drag: from that edge to the opposite map edge, less a margin.
+      maxW =
+        (right ? rect.right - mapRect.left : mapRect.right - rect.left) -
+        PANEL_EDGE_MARGIN;
+      maxH =
+        (bottom ? rect.bottom - mapRect.top : mapRect.bottom - rect.top) -
+        PANEL_EDGE_MARGIN;
+      handle.setPointerCapture?.(event.pointerId);
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+    });
+  }
+
+  /**
+   * Applies the user-chosen panel size, clamped to the room available from the
+   * panel's anchored corner to the opposite map edge. Re-run on reposition so
+   * the size survives expand / window-resize (which rewrite the panel's
+   * positioning) and stays within the map.
+   */
+  private _applyUserPanelSize(): void {
+    if (!this._panel || !this._userPanelSize || !this._mapContainer) return;
+    const mapRect = this._mapContainer.getBoundingClientRect();
+    const pos = this._getControlPosition();
+    const right = pos.endsWith('right');
+    const bottom = pos.startsWith('bottom');
+    const rect = this._panel.getBoundingClientRect();
+    const maxW =
+      (right ? rect.right - mapRect.left : mapRect.right - rect.left) -
+      PANEL_EDGE_MARGIN;
+    const maxH =
+      (bottom ? rect.bottom - mapRect.top : mapRect.bottom - rect.top) -
+      PANEL_EDGE_MARGIN;
+    const width = Math.min(this._userPanelSize.width, Math.max(PANEL_MIN_WIDTH, maxW));
+    const height = Math.min(this._userPanelSize.height, Math.max(PANEL_MIN_HEIGHT, maxH));
+    this._panel.style.boxSizing = 'border-box';
+    this._panel.style.maxWidth = 'none';
+    this._panel.style.maxHeight = 'none';
+    this._panel.style.width = `${width}px`;
+    this._panel.style.height = `${height}px`;
   }
 
   /**
@@ -730,5 +847,10 @@ export class RasterControl implements IControl {
       mapRect.height - anchorOffset - edgeMargin,
     );
     this._panel.style.maxHeight = `min(80vh, 720px, ${available}px)`;
+
+    // Keep the resize handle on the (possibly changed) inward corner, and
+    // re-assert a user-chosen size against the new anchor / map bounds.
+    this._placeResizeHandle?.();
+    this._applyUserPanelSize();
   }
 }
