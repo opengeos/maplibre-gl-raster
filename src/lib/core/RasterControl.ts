@@ -501,6 +501,8 @@ export class RasterControl implements IControl {
       reversed: layer.state.reversed,
       min: range[0],
       max: range[1],
+      // Match the layer's stretch so the legend ticks line up with the data.
+      stretch: layer.state.stretch,
       title: cb?.title?.trim() ? cb.title : layer.name,
       titleAlign: cb?.titleAlign ?? 'left',
       units: cb?.units ?? '',

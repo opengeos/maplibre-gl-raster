@@ -92,6 +92,18 @@ describe('Colorbar DOM', () => {
     expect(tickText(root)).toEqual(['10', '5', '0']);
   });
 
+  it('spaces tick values by the inverse stretch (sqrt)', () => {
+    // Bar positions 0,.25,.5,.75,1 → values min+(max-min)*p^2.
+    const { root } = mount({
+      colors: ['#000000', '#ffffff'],
+      min: 0,
+      max: 100,
+      stretch: 'sqrt',
+      ticks: 5,
+    });
+    expect(tickText(root)).toEqual(['0', '6.25', '25', '56.25', '100']);
+  });
+
   it('uses explicit tickValues over the tick count', () => {
     const { root } = mount({ colors: ['#000000', '#ffffff'], tickValues: [1, 2.5, 9] });
     expect(tickText(root)).toEqual(['1', '2.5', '9']);

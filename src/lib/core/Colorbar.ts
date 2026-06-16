@@ -5,6 +5,31 @@ import { el, fmtNumber } from '../ui/dom';
 /** Layout direction of the colorbar bar and its tick labels. */
 export type ColorbarOrientation = 'horizontal' | 'vertical';
 
+/** Stretch curve the raster applies before the colormap (mirrors RasterStretch). */
+export type ColorbarStretch = 'linear' | 'log' | 'sqrt';
+
+// LogStretch's steepness `k`, matching maplibre-gl-raster's default.
+const LOG_STRENGTH = 99;
+
+/**
+ * Maps a fraction along the bar back to the normalized data value it
+ * represents — the inverse of the renderer's stretch curve. The bar shows the
+ * raw colormap, so under a non-linear stretch a tick at an evenly spaced bar
+ * position corresponds to a non-evenly spaced data value; this returns that
+ * value's normalized position so labels stay accurate.
+ *
+ * @param position - Fraction along the bar in [0, 1].
+ * @param stretch - The stretch curve applied before the colormap.
+ * @returns The normalized data value (in [0, 1]) shown at that position.
+ */
+function inverseStretch(position: number, stretch: ColorbarStretch): number {
+  if (stretch === 'sqrt') return position * position;
+  if (stretch === 'log') {
+    return (Math.pow(1 + LOG_STRENGTH, position) - 1) / LOG_STRENGTH;
+  }
+  return position;
+}
+
 /**
  * Configuration for a {@link Colorbar} legend. All fields are optional; the
  * resolved defaults are listed per field.
@@ -34,6 +59,10 @@ export interface ColorbarOptions {
   orientation?: ColorbarOrientation;
   /** Map corner to dock in (MapLibre control position). @default 'bottom-right' */
   position?: ControlPosition;
+  /** Stretch curve the raster applies before the colormap. Tick values are
+   * spaced to match it so the legend stays accurate under log / sqrt.
+   * @default 'linear' */
+  stretch?: ColorbarStretch;
   /** Number of evenly spaced tick labels (>= 2). Ignored when
    * {@link tickValues} is set. @default 5 */
   ticks?: number;
@@ -59,6 +88,7 @@ const DEFAULTS: ResolvedOptions = {
   title: '',
   titleAlign: 'left',
   units: '',
+  stretch: 'linear',
   orientation: 'horizontal',
   position: 'bottom-right',
   ticks: 5,
@@ -177,11 +207,14 @@ export class Colorbar implements IControl {
       return this._opts.tickValues;
     }
     const count = Math.max(2, Math.round(this._opts.ticks));
-    const { min, max } = this._opts;
-    return Array.from(
-      { length: count },
-      (_, i) => min + ((max - min) * i) / (count - 1),
-    );
+    const { min, max, stretch } = this._opts;
+    // Evenly spaced along the bar; the value at each position follows the
+    // inverse stretch so labels are accurate under log / sqrt (linear is 1:1).
+    return Array.from({ length: count }, (_, i) => {
+      const value =
+        min + (max - min) * inverseStretch(i / (count - 1), stretch);
+      return value;
+    });
   }
 
   /** Formats a tick value with the configured units suffix. */

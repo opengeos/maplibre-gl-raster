@@ -30,7 +30,11 @@ export {
 export { PALETTE_COLORMAP } from './lib/ui/ColormapPicker';
 
 // Type exports
-export type { ColorbarOptions, ColorbarOrientation } from './lib/core/Colorbar';
+export type {
+  ColorbarOptions,
+  ColorbarOrientation,
+  ColorbarStretch,
+} from './lib/core/Colorbar';
 export type {
   AddRasterOptions,
   GeographicBounds,
