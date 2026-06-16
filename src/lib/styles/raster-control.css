@@ -670,6 +670,82 @@
   image-rendering: auto;
 }
 
+/* Colorbar legend (a standalone IControl docked in a map corner) */
+.mlr-colorbar {
+  --mlr-bg: #fff;
+  --mlr-text: #333;
+  --mlr-text-soft: #555;
+  --mlr-border: #ddd;
+  --mlr-shadow: rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--mlr-bg);
+  color: var(--mlr-text);
+  border-radius: 4px;
+  box-shadow: 0 1px 4px var(--mlr-shadow);
+  font: 11px/1.3 system-ui, sans-serif;
+  user-select: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .mlr-colorbar {
+    --mlr-bg: #2b2f33;
+    --mlr-text: #e6e6e6;
+    --mlr-text-soft: #b8b8b8;
+    --mlr-border: #555;
+    --mlr-shadow: rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+}
+
+.mlr-colorbar-title {
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--mlr-text);
+}
+
+.mlr-colorbar-track {
+  display: flex;
+  gap: 6px;
+}
+
+.mlr-colorbar-horizontal .mlr-colorbar-track {
+  flex-direction: column;
+}
+
+.mlr-colorbar-vertical .mlr-colorbar-track {
+  flex-direction: row;
+}
+
+.mlr-colorbar-bar {
+  border: 1px solid var(--mlr-border);
+  border-radius: 2px;
+}
+
+.mlr-colorbar-ticks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--mlr-text-soft);
+  white-space: nowrap;
+}
+
+.mlr-colorbar-horizontal .mlr-colorbar-ticks {
+  flex-direction: row;
+}
+
+/* Pull the first/last labels inward so they don't overflow the bar ends. */
+.mlr-colorbar-horizontal .mlr-colorbar-tick:first-child {
+  margin-left: -2px;
+}
+
+.mlr-colorbar-horizontal .mlr-colorbar-tick:last-child {
+  margin-right: -2px;
+}
+
+.mlr-colorbar-vertical .mlr-colorbar-ticks {
+  flex-direction: column;
+}
+
 /* Settings header + inspect toggle */
 .mlr-settings-header {
   display: flex;
