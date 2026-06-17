@@ -27,6 +27,7 @@ import {
   MAX_BAND_SLOTS,
   type MultiBandTileData,
 } from '../raster/tile-loader';
+import { WebMercatorCOGLayer } from '../raster/web-mercator-cog-layer';
 import { generateId } from '../utils/helpers';
 import {
   createLayerState,
@@ -596,7 +597,11 @@ export class LayerManager {
         }
       },
     };
-    return new COGLayer(cogProps);
+    // WebMercatorCOGLayer is a COGLayer that draws EPSG:3857 sources with an
+    // identity reprojection, avoiding the antimeridian wrap that breaks global
+    // Web-Mercator COGs (see web-mercator-cog-layer.ts). It is a no-op for any
+    // other source CRS.
+    return new WebMercatorCOGLayer(cogProps);
   }
 
   /** Records a CRS-resolution failure once: marks the layer errored, drops it
