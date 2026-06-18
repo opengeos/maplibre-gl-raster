@@ -7,6 +7,17 @@ import type { ColorbarOrientation } from './Colorbar';
 export type RasterMode = 'rgb' | 'single';
 
 /**
+ * Which backend renders the raster layers:
+ * - `'maplibre-gl-raster'` — the default GPU pipeline (a deck.gl `COGLayer` on
+ *   a shared `MapboxOverlay`).
+ * - `'cog-tiler-wasm'` — a serverless CPU/WASM tiler ([cog-tiler-wasm](https://github.com/opengeos/cog-tiler-wasm))
+ *   wired to a MapLibre custom protocol; loaded lazily on first use.
+ *
+ * The choice is global (it applies to every layer), not per-layer.
+ */
+export type RenderEngine = 'maplibre-gl-raster' | 'cog-tiler-wasm';
+
+/**
  * Per-layer colorbar legend config. When `visible`, the control shows a
  * {@link import('./Colorbar').Colorbar} for the (single-band) layer, driven by
  * its colormap, `reversed` flag, and effective rescale range. The fields here
@@ -168,6 +179,15 @@ export interface RasterControlOptions {
    * @default true
    */
   interleaved?: boolean;
+
+  /**
+   * Which rendering backend to start with. Users can switch at runtime from the
+   * panel; this only sets the initial choice. The `'cog-tiler-wasm'` engine is
+   * loaded lazily (it adds a wasm tiler and its peer dependencies), so the
+   * default keeps the bundle lean.
+   * @default 'maplibre-gl-raster'
+   */
+  engine?: RenderEngine;
 
   /**
    * Prefills the "Add data" URL input with this COG URL. The raster is only

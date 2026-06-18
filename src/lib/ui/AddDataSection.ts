@@ -61,8 +61,8 @@ export class AddDataSection {
     const submitUrl = () => {
       const url = input.value.trim();
       if (!url) return;
-      input.value = '';
-      loadBtn.disabled = true;
+      // Keep the URL in the input after loading so the user can edit it or load
+      // it again (e.g. after switching the rendering engine).
       options.onAddUrl(url, currentBeforeId());
     };
     loadBtn.addEventListener('click', submitUrl);

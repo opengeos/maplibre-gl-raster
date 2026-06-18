@@ -1,6 +1,7 @@
 import type { LayerManager } from '../state/LayerManager';
 import { AddDataSection } from './AddDataSection';
 import { el } from './dom';
+import { EngineSection } from './EngineSection';
 import { LayerList } from './LayerList';
 import { SettingsSection, type InspectHooks } from './SettingsSection';
 
@@ -12,6 +13,7 @@ import { SettingsSection, type InspectHooks } from './SettingsSection';
 export class PanelUI {
   private _manager: LayerManager;
   private _root: HTMLElement;
+  private _engine: EngineSection;
   private _layerList: LayerList;
   private _settings: SettingsSection;
   private _unsubscribe: (() => void)[] = [];
@@ -29,6 +31,16 @@ export class PanelUI {
     options?: { defaultUrl?: string; inspect?: InspectHooks },
   ) {
     this._manager = manager;
+
+    const engine = new EngineSection({
+      value: manager.engine,
+      onChange: (next) => {
+        manager.setEngine(next);
+        // Reflect the change in case the manager normalized it.
+        engine.setValue(manager.engine);
+      },
+    });
+    this._engine = engine;
 
     const addData = new AddDataSection({
       initialUrl: options?.defaultUrl,
@@ -50,9 +62,7 @@ export class PanelUI {
       onToggleVisible: (id, visible) => this._manager.setVisible(id, visible),
       onZoomTo: (id) => this._manager.zoomTo(id),
       onMove: (id, direction) => {
-        const index = this._manager
-          .getLayers()
-          .findIndex((l) => l.id === id);
+        const index = this._manager.getLayers().findIndex((l) => l.id === id);
         if (index === -1) return;
         this._manager.reorder(id, index + direction);
       },
@@ -74,6 +84,7 @@ export class PanelUI {
     this._root = el(
       'div',
       { className: 'mlr-panel' },
+      engine.el,
       addData.el,
       this._layerList.el,
       this._settings.el,
@@ -86,6 +97,8 @@ export class PanelUI {
       this._settings.render();
     };
     const onChange = () => {
+      // A programmatic setEngine() emits rasterchange; keep the selector synced.
+      this._engine.setValue(this._manager.engine);
       this._renderList();
       this._settings.notifyChange();
     };

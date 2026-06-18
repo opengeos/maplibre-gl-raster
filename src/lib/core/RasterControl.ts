@@ -14,6 +14,7 @@ import type {
   RasterControlState,
   RasterLayerInfo,
   RasterLayerState,
+  RenderEngine,
 } from './types';
 
 /**
@@ -28,6 +29,7 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   interleaved: true,
   defaultUrl: '',
   autoLoad: false,
+  engine: 'maplibre-gl-raster',
   epsgResolver: createResilientEpsgResolver(),
 };
 
@@ -40,7 +42,10 @@ const PANEL_EDGE_MARGIN = 12;
 /**
  * Event handlers map type
  */
-type EventHandlersMap = globalThis.Map<RasterControlEvent, Set<RasterControlEventHandler>>;
+type EventHandlersMap = globalThis.Map<
+  RasterControlEvent,
+  Set<RasterControlEventHandler>
+>;
 
 /**
  * A MapLibre GL control for visualizing local and remote raster datasets
@@ -115,7 +120,10 @@ export class RasterControl implements IControl {
     // overlay) plus the panel UI bound to it.
     this._layerManager = new LayerManager(
       map,
-      { interleaved: this._options.interleaved },
+      {
+        interleaved: this._options.interleaved,
+        engine: this._options.engine,
+      },
       { epsgResolver: this._options.epsgResolver },
     );
     this._forwardLayerManagerEvents(this._layerManager);
@@ -144,7 +152,9 @@ export class RasterControl implements IControl {
     }
     if (autoLoading) {
       // Errors surface via the 'error' event and the layer row.
-      void this._layerManager.addRaster(this._options.defaultUrl).catch(() => {});
+      void this._layerManager
+        .addRaster(this._options.defaultUrl)
+        .catch(() => {});
     }
 
     // Flush addRaster calls made before the control was added to a map.
@@ -385,6 +395,28 @@ export class RasterControl implements IControl {
    */
   selectRaster(id: string | null): void {
     this._layerManager?.select(id);
+  }
+
+  /**
+   * Gets the active rendering engine.
+   *
+   * @returns The current engine, or the configured default before the control
+   *   is added to a map
+   */
+  getEngine(): RenderEngine {
+    return this._layerManager?.engine ?? this._options.engine;
+  }
+
+  /**
+   * Switches the rendering engine for every layer. The `'cog-tiler-wasm'`
+   * engine is loaded lazily on first use; the panel selector reflects the
+   * change automatically.
+   *
+   * @param engine - The backend to use
+   */
+  setEngine(engine: RenderEngine): void {
+    this._options.engine = engine;
+    this._layerManager?.setEngine(engine);
   }
 
   /**
@@ -648,8 +680,14 @@ export class RasterControl implements IControl {
     const onMove = (event: PointerEvent): void => {
       const dx = event.clientX - startX;
       const dy = event.clientY - startY;
-      const width = Math.min(maxW, Math.max(PANEL_MIN_WIDTH, right ? startW - dx : startW + dx));
-      const height = Math.min(maxH, Math.max(PANEL_MIN_HEIGHT, bottom ? startH - dy : startH + dy));
+      const width = Math.min(
+        maxW,
+        Math.max(PANEL_MIN_WIDTH, right ? startW - dx : startW + dx),
+      );
+      const height = Math.min(
+        maxH,
+        Math.max(PANEL_MIN_HEIGHT, bottom ? startH - dy : startH + dy),
+      );
       this._userPanelSize = { width, height };
       this._applyUserPanelSize();
     };
@@ -772,14 +810,22 @@ export class RasterControl implements IControl {
    *
    * @returns The position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
    */
-  private _getControlPosition(): 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' {
+  private _getControlPosition():
+    | 'top-left'
+    | 'top-right'
+    | 'bottom-left'
+    | 'bottom-right' {
     const parent = this._container?.parentElement;
     if (!parent) return 'top-right'; // Default
 
-    if (parent.classList.contains('maplibregl-ctrl-top-left')) return 'top-left';
-    if (parent.classList.contains('maplibregl-ctrl-top-right')) return 'top-right';
-    if (parent.classList.contains('maplibregl-ctrl-bottom-left')) return 'bottom-left';
-    if (parent.classList.contains('maplibregl-ctrl-bottom-right')) return 'bottom-right';
+    if (parent.classList.contains('maplibregl-ctrl-top-left'))
+      return 'top-left';
+    if (parent.classList.contains('maplibregl-ctrl-top-right'))
+      return 'top-right';
+    if (parent.classList.contains('maplibregl-ctrl-bottom-left'))
+      return 'bottom-left';
+    if (parent.classList.contains('maplibregl-ctrl-bottom-right'))
+      return 'bottom-right';
 
     return 'top-right'; // Default
   }
@@ -856,10 +902,7 @@ export class RasterControl implements IControl {
     // also cap it to the space left between the anchor and the opposite map
     // edge. The 160px floor keeps the panel usable when the map is tiny;
     // overflow-y: auto then scrolls the content.
-    const available = Math.max(
-      160,
-      mapRect.height - anchorOffset - edgeMargin,
-    );
+    const available = Math.max(160, mapRect.height - anchorOffset - edgeMargin);
     this._panel.style.maxHeight = `min(80vh, 720px, ${available}px)`;
 
     // Keep the resize handle on the (possibly changed) inward corner, and
