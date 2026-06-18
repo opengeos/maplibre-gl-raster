@@ -11,6 +11,17 @@ function makeFakeMap(): MapLibreMap {
     removeControl: () => undefined,
     on: () => undefined,
     off: () => undefined,
+    // Native raster-layer surface touched by the cog-tiler-wasm engine.
+    isStyleLoaded: () => true,
+    getSource: () => undefined,
+    getLayer: () => undefined,
+    addSource: () => undefined,
+    addLayer: () => undefined,
+    removeLayer: () => undefined,
+    removeSource: () => undefined,
+    setPaintProperty: () => undefined,
+    moveLayer: () => undefined,
+    once: () => undefined,
   } as unknown as MapLibreMap;
 }
 
@@ -23,14 +34,67 @@ describe('RasterControl panel sizing', () => {
 
     control.expand();
 
-    const panel = (
-      control as unknown as { _panel?: HTMLElement }
-    )._panel;
+    const panel = (control as unknown as { _panel?: HTMLElement })._panel;
     expect(panel).toBeDefined();
     // jsdom reports zero-sized rects, so the available space resolves to the
     // 160px floor; the stylesheet caps stay in the min() so a real layout
     // can never exceed them either.
     expect(panel!.style.maxHeight).toBe('min(80vh, 720px, 160px)');
+
+    control.onRemove();
+  });
+});
+
+describe('RasterControl rendering engine', () => {
+  it('defaults to the maplibre-gl-raster engine', () => {
+    const control = new RasterControl();
+    expect(control.getEngine()).toBe('maplibre-gl-raster');
+  });
+
+  it('honors the configured initial engine', () => {
+    const control = new RasterControl({ engine: 'cog-tiler-wasm' });
+    expect(control.getEngine()).toBe('cog-tiler-wasm');
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+    expect(control.getEngine()).toBe('cog-tiler-wasm');
+    control.onRemove();
+  });
+
+  it('renders an engine selector reflecting the active engine', () => {
+    const control = new RasterControl({ collapsed: false });
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+
+    const selector = (
+      control as unknown as { _panel?: HTMLElement }
+    )._panel!.querySelector<HTMLSelectElement>(
+      'select[aria-label="render-engine"]',
+    );
+    expect(selector).not.toBeNull();
+    expect(selector!.value).toBe('maplibre-gl-raster');
+
+    control.onRemove();
+  });
+
+  it('switches engines via the selector and the public API in sync', () => {
+    const control = new RasterControl({ collapsed: false });
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+    const selector = (
+      control as unknown as { _panel?: HTMLElement }
+    )._panel!.querySelector<HTMLSelectElement>(
+      'select[aria-label="render-engine"]',
+    )!;
+
+    // User-driven change through the <select>.
+    selector.value = 'cog-tiler-wasm';
+    selector.dispatchEvent(new Event('change'));
+    expect(control.getEngine()).toBe('cog-tiler-wasm');
+
+    // Programmatic change reflects back onto the selector.
+    control.setEngine('maplibre-gl-raster');
+    expect(control.getEngine()).toBe('maplibre-gl-raster');
+    expect(selector.value).toBe('maplibre-gl-raster');
 
     control.onRemove();
   });

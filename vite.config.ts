@@ -47,6 +47,9 @@ export default defineConfig({
         /^maplibre-gl($|\/)/,
         /^@deck\.gl\//,
         /^@luma\.gl\//,
+        // Optional peer dependency for the cog-tiler-wasm engine, imported
+        // lazily; never bundled.
+        /^cog-tiler-wasm($|\/)/,
       ],
       output: {
         assetFileNames: (assetInfo) => {

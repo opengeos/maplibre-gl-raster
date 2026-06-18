@@ -8,7 +8,11 @@ import { parseColormap, type GeoTIFF } from '@developmentseed/geotiff';
 import type { EpsgResolver } from '@developmentseed/proj';
 import type { Device, Texture } from '@luma.gl/core';
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import type { AddRasterOptions, RasterLayerState } from '../core/types';
+import type {
+  AddRasterOptions,
+  RasterLayerState,
+  RenderEngine,
+} from '../core/types';
 import { colormapsPngUrl } from '../raster/colormaps';
 import { createResilientEpsgResolver } from '../raster/epsg-resolver';
 import { loadGeoTIFF as defaultLoadGeoTIFF } from '../raster/load-geotiff';
@@ -30,11 +34,19 @@ import {
 import { WebMercatorCOGLayer } from '../raster/web-mercator-cog-layer';
 import { generateId } from '../utils/helpers';
 import {
+  CogTilerEngine,
+  type CogEngineLayer,
+  type CogTilerModule,
+} from './CogTilerEngine';
+import {
   createLayerState,
   deriveLayerName,
   type GeographicBounds,
   type RasterLayer,
 } from './RasterLayer';
+
+/** Default engine when none is configured: the deck.gl GPU pipeline. */
+export const DEFAULT_ENGINE: RenderEngine = 'maplibre-gl-raster';
 
 // Module-scope so the getTileData identity stays stable for the lifetime of
 // the page. deck.gl's TileLayer treats a changed getTileData reference as
@@ -139,12 +151,23 @@ export interface LayerManagerDeps {
    * the network dependency.
    */
   epsgResolver: EpsgResolver;
+  /**
+   * Loads the optional `cog-tiler-wasm` package for the CPU/WASM engine.
+   * Defaults to a dynamic import so the wasm tiler and its peer dependencies
+   * never enter the default bundle; overridable in tests.
+   */
+  loadCogTiler: () => Promise<CogTilerModule>;
 }
 
 const DEFAULT_DEPS: LayerManagerDeps = {
   loadGeoTIFF: defaultLoadGeoTIFF,
   computeAutoStats: defaultComputeAutoStats,
   epsgResolver: createResilientEpsgResolver(),
+  // Resolved lazily: the package is an optional peer dependency, only loaded
+  // when the user selects the cog-tiler-wasm engine. A literal specifier so
+  // Vite/consumers resolve and code-split it; the lib build externalizes it
+  // (see vite.config.ts) so it never enters the default bundle.
+  loadCogTiler: () => import('cog-tiler-wasm'),
   createOverlay: (map, options) => {
     const overlay = new MapboxOverlay({
       interleaved: options.interleaved,
@@ -175,6 +198,10 @@ export class LayerManager {
   private _deps: LayerManagerDeps;
   private _layers: RasterLayer[] = [];
   private _selectedId: string | null = null;
+  /** Active rendering backend. */
+  private _engine: RenderEngine = DEFAULT_ENGINE;
+  /** The cog-tiler-wasm backend, created lazily when that engine is selected. */
+  private _cogEngine: CogTilerEngine | null = null;
   private _overlay: OverlayLike | null = null;
   private _device: Device | null = null;
   private _colormapTexture: Texture | null = null;
@@ -198,17 +225,44 @@ export class LayerManager {
    */
   constructor(
     map: MapLibreMap,
-    options?: { interleaved?: boolean },
+    options?: { interleaved?: boolean; engine?: RenderEngine },
     deps?: Partial<LayerManagerDeps>,
   ) {
     this._map = map;
     this._interleaved = options?.interleaved ?? true;
+    this._engine = options?.engine ?? DEFAULT_ENGINE;
     this._deps = { ...DEFAULT_DEPS, ...deps };
   }
 
   /** The id of the layer currently selected for editing, or null. */
   get selectedId(): string | null {
     return this._selectedId;
+  }
+
+  /** The active rendering backend. */
+  get engine(): RenderEngine {
+    return this._engine;
+  }
+
+  /**
+   * Switches the rendering backend for every layer. Tears down the previous
+   * backend's map artifacts and re-renders with the new one. A no-op when the
+   * engine is unchanged.
+   *
+   * @param engine - The backend to use
+   */
+  setEngine(engine: RenderEngine): void {
+    if (engine === this._engine) return;
+    this._engine = engine;
+    if (engine === 'maplibre-gl-raster') {
+      // Hand rendering back to deck.gl: drop the cog-tiler map layers first.
+      this._cogEngine?.clear();
+    } else {
+      // Hand rendering to cog-tiler: blank the deck.gl overlay first.
+      this._overlay?.setProps({ layers: [] });
+    }
+    this._rebuild();
+    this._emit({ type: 'rasterchange' });
   }
 
   /** All managed layers in draw order (first = bottom). */
@@ -244,15 +298,16 @@ export class LayerManager {
     const url = isFile ? URL.createObjectURL(source) : source;
     const layer: RasterLayer = {
       id,
-      name:
-        options?.name ?? deriveLayerName(isFile ? source.name : source),
+      name: options?.name ?? deriveLayerName(isFile ? source.name : source),
       source: isFile
         ? { kind: 'file', fileName: source.name, objectUrl: url }
         : { kind: 'url', url },
       url,
+      file: isFile ? source : null,
       state: createLayerState(options?.state),
       userPickedMode:
-        options?.state?.mode !== undefined || options?.state?.bands !== undefined,
+        options?.state?.mode !== undefined ||
+        options?.state?.bands !== undefined,
       geotiff: null,
       autoStats: null,
       bandCount: null,
@@ -268,7 +323,7 @@ export class LayerManager {
     };
 
     this._layers.push(layer);
-    this._ensureOverlay();
+    this._ensureEngine();
     this.select(layer.id);
     this._emit({ type: 'rasteradd', layerId: layer.id });
 
@@ -461,6 +516,10 @@ export class LayerManager {
       this._deps.removeOverlay(this._map, this._overlay);
       this._overlay = null;
     }
+    if (this._cogEngine) {
+      this._cogEngine.destroy();
+      this._cogEngine = null;
+    }
     this._handlers.clear();
   }
 
@@ -474,14 +533,25 @@ export class LayerManager {
     layer.paletteTexture = null;
   }
 
-  private _emit(data: Omit<LayerManagerEventData, 'type'> & { type: LayerManagerEvent }): void {
+  private _emit(
+    data: Omit<LayerManagerEventData, 'type'> & { type: LayerManagerEvent },
+  ): void {
     const handlers = this._handlers.get(data.type);
     if (handlers) {
       handlers.forEach((handler) => handler(data));
     }
   }
 
+  /** Ensures the artifacts for the active engine exist. */
+  private _ensureEngine(): void {
+    if (this._engine === 'maplibre-gl-raster') this._ensureOverlay();
+    else this._ensureCogEngine();
+  }
+
   private _ensureOverlay(): void {
+    // Only the deck.gl engine needs the overlay; skip it under cog-tiler so we
+    // don't spin up an unused WebGL device.
+    if (this._engine !== 'maplibre-gl-raster') return;
     if (this._overlay) return;
     this._overlay = this._deps.createOverlay(this._map, {
       interleaved: this._interleaved,
@@ -490,6 +560,66 @@ export class LayerManager {
         void this._loadColormapTexture();
       },
     });
+  }
+
+  private _ensureCogEngine(): CogTilerEngine {
+    if (!this._cogEngine) {
+      this._cogEngine = new CogTilerEngine(this._map, {
+        loadModule: this._deps.loadCogTiler,
+        onBounds: (id, bounds, zoomTo) => this._onCogBounds(id, bounds, zoomTo),
+        onError: (id, error) => this._onCogError(id, error),
+      });
+    }
+    return this._cogEngine;
+  }
+
+  /** Records a cog-tiler source's bounds (fitting the map once when requested),
+   * mirroring the deck path's onGeoTIFFLoad behavior. */
+  private _onCogBounds(
+    id: string,
+    bounds: GeographicBounds,
+    zoomTo: boolean,
+  ): void {
+    const layer = this.getLayer(id);
+    if (!layer) return;
+    const boundsArrived = !layer.bounds;
+    layer.bounds = bounds;
+    if (zoomTo && layer.zoomTo) {
+      layer.zoomTo = false;
+      this._fitBounds(bounds);
+    }
+    if (boundsArrived) this._emit({ type: 'rasterchange', layerId: id });
+  }
+
+  /** Surfaces a cog-tiler open / module-load failure as a layer (or global)
+   * error. */
+  private _onCogError(id: string | undefined, error: Error): void {
+    if (this._destroyed) return;
+    if (id) {
+      const layer = this.getLayer(id);
+      if (layer) {
+        layer.loading = false;
+        layer.error = error;
+      }
+      this._emit({ type: 'error', layerId: id, error });
+      this._emit({ type: 'rasterchange', layerId: id });
+    } else {
+      this._emit({ type: 'error', error });
+    }
+  }
+
+  /** Projects the renderable layers into the cog-tiler engine's input shape. */
+  private _cogRenderableLayers(): CogEngineLayer[] {
+    return this._layers
+      .filter((l) => l.geotiff && l.state.visible && !this._crsFailed.has(l.id))
+      .map((l) => ({
+        id: l.id,
+        source: l.file ?? l.url,
+        state: l.state,
+        autoStats: l.autoStats,
+        beforeId: l.beforeId,
+        zoomTo: l.zoomTo,
+      }));
   }
 
   /** Fetch + decode the colormap sprite once per device, then re-render so
@@ -549,6 +679,13 @@ export class LayerManager {
    * it to the overlay. Layer ids are stable so deck.gl preserves each
    * layer's tile cache across rebuilds. */
   private _rebuild(): void {
+    if (this._engine === 'cog-tiler-wasm') {
+      // Keep the deck.gl overlay blank (if it was ever created) and let the
+      // cog-tiler engine drive the native MapLibre raster layers.
+      this._overlay?.setProps({ layers: [] });
+      this._ensureCogEngine().sync(this._cogRenderableLayers());
+      return;
+    }
     if (!this._overlay) return;
     const layers = this._layers
       .filter((l) => l.geotiff && l.state.visible && !this._crsFailed.has(l.id))

@@ -51,6 +51,7 @@ export type {
   RasterMode,
   RasterNodata,
   RasterStretch,
+  RenderEngine,
 } from './lib/core/types';
 export type {
   BandSummary,

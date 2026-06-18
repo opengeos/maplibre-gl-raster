@@ -114,6 +114,7 @@ The main control class implementing MapLibre's `IControl` interface.
 | `interleaved` | `boolean` | `true`        | Render the deck.gl overlay interleaved with the basemap layers            |
 | `defaultUrl`  | `string`  | `''`          | Prefills the Add data URL input (not loaded until the user clicks Load)  |
 | `autoLoad`    | `boolean` | `false`       | Load `defaultUrl` automatically when the control is added to the map     |
+| `engine`      | `RenderEngine` | `'maplibre-gl-raster'` | Initial rendering backend; switchable at runtime from the panel    |
 
 #### Raster Methods
 
@@ -125,6 +126,7 @@ The main control class implementing MapLibre's `IControl` interface.
 - `selectRaster(id | null)` - Choose which layer the panel's settings edit
 - `zoomToRaster(id)` - Fit the map to a layer's bounds
 - `reorderRaster(id, toIndex)` - Move a layer in the draw order (0 = bottom)
+- `getEngine()` / `setEngine(engine)` - Read / switch the rendering backend (see [Rendering engines](#rendering-engines))
 
 `addRaster` options (`AddRasterOptions`): `id`, `name`, `state` (initial `Partial<RasterLayerState>` overrides), `zoomTo` (default `true`), and `beforeId` (insert the raster beneath an existing style layer, e.g. a label layer; also available as an input in the panel's Add data section).
 
@@ -140,6 +142,44 @@ The main control class implementing MapLibre's `IControl` interface.
 - `collapse` / `expand` / `statechange` - Panel state events
 - `rasteradd` / `rasterremove` / `rasterchange` / `rasterselect` - Layer lifecycle events (payload includes `layerId`)
 - `error` - Loading or rendering errors (payload includes `error`)
+
+### Rendering engines
+
+The panel has a **Rendering engine** selector (and a matching `engine` option /
+`getEngine()` / `setEngine()` API) that switches the backend used for every
+layer:
+
+- **`maplibre-gl-raster`** (default) - the GPU pipeline described above: a
+  deck.gl `COGLayer` on a shared `MapboxOverlay`. Parameter changes re-render
+  without re-fetching tiles.
+- **`cog-tiler-wasm`** - a serverless CPU/WASM XYZ tiler
+  ([cog-tiler-wasm](https://github.com/opengeos/cog-tiler-wasm)) wired to a
+  MapLibre custom protocol. Tiles are rendered on the CPU and served as native
+  MapLibre raster layers. The panel's settings (bands, rescale, colormap,
+  curve, gamma, nodata, opacity) map directly onto its render parameters.
+
+`cog-tiler-wasm` is an **optional peer dependency**, loaded lazily the first
+time the engine is selected, so it never enters the default bundle. To use it,
+install it alongside its own peers:
+
+```bash
+npm install cog-tiler-wasm whitebox-wasm proj4 "geotiff@^2.1" geotiff-geokeys-to-proj4
+```
+
+> Pin `geotiff` to the `2.x` line. `cog-tiler-wasm` reads a GeoTIFF's embedded
+> color table from `fileDirectory.ColorMap`, which `geotiff@3` resolves lazily
+> (so paletted rasters like NLCD would otherwise render through a continuous
+> colormap instead of their categorical colors).
+
+```typescript
+// Start on the WASM engine, or switch at runtime:
+const control = new RasterControl({ engine: "cog-tiler-wasm" });
+// ...
+control.setEngine("maplibre-gl-raster");
+```
+
+If the package is not installed, selecting the engine surfaces a load error via
+the `error` event; the default engine keeps working.
 
 ### RasterLayerState
 

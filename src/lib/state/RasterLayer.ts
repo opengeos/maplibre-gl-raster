@@ -51,6 +51,9 @@ export interface RasterLayer {
   source: RasterLayerSource;
   /** URL handed to loadGeoTIFF (the objectUrl for local files). */
   url: string;
+  /** The original File for local-file layers, so the cog-tiler-wasm engine can
+   * read it in memory instead of over a blob URL. Null for remote URLs. */
+  file: File | null;
   state: RasterLayerState;
   /** Whether the caller explicitly chose mode/bands (suppresses auto-pick). */
   userPickedMode: boolean;
@@ -103,9 +106,7 @@ export function toLayerInfo(layer: RasterLayer): RasterLayerInfo {
  */
 export function deriveLayerName(source: string): string {
   try {
-    const path = source.includes('://')
-      ? new URL(source).pathname
-      : source;
+    const path = source.includes('://') ? new URL(source).pathname : source;
     const segment = path.split('/').filter(Boolean).pop();
     return segment ? decodeURIComponent(segment) : source;
   } catch {

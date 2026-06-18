@@ -17,6 +17,23 @@ function makeFakeTiff(count = 3): GeoTIFF {
   } as unknown as GeoTIFF;
 }
 
+/** A minimal fake cog-tiler-wasm module for the engine-selection tests. */
+function makeFakeCogModule() {
+  const source = {
+    mode: '3857' as const,
+    crsLabel: 'EPSG:3857',
+    levels: [],
+    boundsLonLat: [-10, -5, 10, 5],
+    hasPalette: false,
+    renderTilePNG: vi.fn(async () => new Uint8Array([1])),
+  };
+  return {
+    init: vi.fn(async () => undefined),
+    openCog: vi.fn(async () => source),
+    colormaps: () => [],
+  };
+}
+
 function makeFakeStats(): AutoStats {
   const band = { min: 0, max: 255, histogram: new Array<number>(128).fill(1) };
   return {
@@ -33,6 +50,7 @@ function makeHarness(opts?: {
   bandCount?: number;
   failLoad?: boolean;
   epsgResolver?: LayerManagerDeps['epsgResolver'];
+  engine?: 'maplibre-gl-raster' | 'cog-tiler-wasm';
 }) {
   const setProps = vi.fn();
   const overlay: OverlayLike = { setProps };
@@ -41,8 +59,20 @@ function makeHarness(opts?: {
     removeControl: vi.fn(),
     fitBounds: vi.fn(),
     getLayer: vi.fn((id: string) => (id === 'existing-layer' ? {} : undefined)),
+    // Native raster-layer surface used by the cog-tiler-wasm engine.
+    isStyleLoaded: () => true,
+    getSource: vi.fn(() => undefined),
+    addSource: vi.fn(),
+    addLayer: vi.fn(),
+    removeLayer: vi.fn(),
+    removeSource: vi.fn(),
+    setPaintProperty: vi.fn(),
+    moveLayer: vi.fn(),
+    once: vi.fn(),
+    off: vi.fn(),
   } as unknown as MapLibreMap;
 
+  const loadCogTiler = vi.fn(async () => makeFakeCogModule());
   const deps: Partial<LayerManagerDeps> = {
     loadGeoTIFF: vi.fn(async (url: string) => {
       if (opts?.failLoad) throw new Error(`load failed: ${url}`);
@@ -51,10 +81,15 @@ function makeHarness(opts?: {
     computeAutoStats: vi.fn(async () => makeFakeStats()),
     createOverlay: vi.fn(() => overlay),
     removeOverlay: vi.fn(),
+    loadCogTiler,
     ...(opts?.epsgResolver ? { epsgResolver: opts.epsgResolver } : {}),
   };
 
-  const manager = new LayerManager(map, { interleaved: true }, deps);
+  const manager = new LayerManager(
+    map,
+    { interleaved: true, engine: opts?.engine },
+    deps,
+  );
   const events: LayerManagerEventData[] = [];
   for (const type of [
     'rasteradd',
@@ -65,7 +100,7 @@ function makeHarness(opts?: {
   ] as const) {
     manager.on(type, (e) => events.push(e));
   }
-  return { manager, map, overlay, setProps, deps, events };
+  return { manager, map, overlay, setProps, deps, loadCogTiler, events };
 }
 
 describe('LayerManager.addRaster', () => {
@@ -401,7 +436,9 @@ describe('LayerManager CRS resolution', () => {
 
     // COGLayer would call this during its (un-awaited) parse step; invoking it
     // directly exercises the same wrapper without a real deck.gl render.
-    await expect(lastEpsgResolver(setProps)(26916)).rejects.toThrow(/EPSG:26916/);
+    await expect(lastEpsgResolver(setProps)(26916)).rejects.toThrow(
+      /EPSG:26916/,
+    );
 
     const layer = manager.getLayer(id)!;
     expect(layer.error).toBeInstanceOf(Error);
@@ -430,6 +467,54 @@ describe('LayerManager CRS resolution', () => {
     manager.setState(id, { opacity: 0.5 });
     const lastLayers = setProps.mock.calls.at(-1)![0].layers as unknown[];
     expect(lastLayers).toHaveLength(0);
+  });
+});
+
+describe('LayerManager engine selection', () => {
+  it('defaults to the maplibre-gl-raster (deck.gl) engine', () => {
+    const { manager } = makeHarness();
+    expect(manager.engine).toBe('maplibre-gl-raster');
+  });
+
+  it('renders through the cog-tiler-wasm engine when configured, skipping the deck overlay', async () => {
+    const { manager, deps, loadCogTiler, map } = makeHarness({
+      engine: 'cog-tiler-wasm',
+    });
+    await manager.addRaster('https://example.com/a.tif');
+    // No deck.gl overlay is created under the cog-tiler engine.
+    expect(deps.createOverlay).not.toHaveBeenCalled();
+    // The cog-tiler module is loaded lazily and a native raster layer added.
+    await vi.waitFor(() => expect(loadCogTiler).toHaveBeenCalled());
+    await vi.waitFor(() =>
+      expect(map.addLayer as ReturnType<typeof vi.fn>).toHaveBeenCalled(),
+    );
+  });
+
+  it('switches engines at runtime, blanking the deck overlay', async () => {
+    const { manager, setProps, loadCogTiler } = makeHarness();
+    await manager.addRaster('https://example.com/a.tif');
+    expect(manager.engine).toBe('maplibre-gl-raster');
+    setProps.mockClear();
+
+    manager.setEngine('cog-tiler-wasm');
+    expect(manager.engine).toBe('cog-tiler-wasm');
+    // The deck overlay is emptied so it stops drawing.
+    expect(setProps).toHaveBeenCalledWith({ layers: [] });
+    await vi.waitFor(() => expect(loadCogTiler).toHaveBeenCalled());
+
+    // Switching back rebuilds the deck overlay with the layer.
+    manager.setEngine('maplibre-gl-raster');
+    expect(manager.engine).toBe('maplibre-gl-raster');
+    const lastCall = setProps.mock.calls.at(-1)![0];
+    expect(lastCall.layers).toHaveLength(1);
+  });
+
+  it('ignores a no-op engine change', async () => {
+    const { manager, setProps } = makeHarness();
+    await manager.addRaster('https://example.com/a.tif');
+    setProps.mockClear();
+    manager.setEngine('maplibre-gl-raster');
+    expect(setProps).not.toHaveBeenCalled();
   });
 });
 
