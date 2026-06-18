@@ -309,6 +309,52 @@ describe('LayerManager.setState / setVisible', () => {
   });
 });
 
+describe('LayerManager tile-loader band selection', () => {
+  /** The getTileData callback on the most recently pushed deck.gl layer. */
+  const lastTileLoader = (setProps: ReturnType<typeof vi.fn>): unknown => {
+    const layers = setProps.mock.calls.at(-1)![0].layers as {
+      props: { getTileData: unknown };
+    }[];
+    return layers[0].props.getTileData;
+  };
+
+  it('keeps the loader identity stable across non-band state changes', async () => {
+    // A changed getTileData reference invalidates deck.gl's tile cache, so an
+    // opacity drag must not allocate a new loader (which would refetch tiles).
+    const { manager, setProps } = makeHarness({ bandCount: 12 });
+    const id = await manager.addRaster('https://example.com/ms.tif');
+    const before = lastTileLoader(setProps);
+    manager.setState(id, { opacity: 0.3 });
+    expect(lastTileLoader(setProps)).toBe(before);
+  });
+
+  it('swaps the loader when the band selection changes', async () => {
+    const { manager, setProps } = makeHarness({ bandCount: 12 });
+    const id = await manager.addRaster('https://example.com/ms.tif');
+    const rgb123 = lastTileLoader(setProps);
+
+    // A genuine band swap must refetch, so the loader reference changes…
+    manager.setState(id, { bands: [4, 5, 6] });
+    const rgb456 = lastTileLoader(setProps);
+    expect(rgb456).not.toBe(rgb123);
+
+    // …but reordering RGB channels within the same band set reuses textures.
+    manager.setState(id, { bands: [6, 5, 4] });
+    expect(lastTileLoader(setProps)).toBe(rgb456);
+  });
+
+  it('selects a high band for single-band rendering (band 12 of 12)', async () => {
+    // Band 12 must be fetchable so its pseudocolor renders (issue #485). The
+    // loader is memoized per band set, so [12] gets its own stable loader,
+    // distinct from the default RGB [1,2,3] loader.
+    const { manager, setProps } = makeHarness({ bandCount: 12 });
+    const id = await manager.addRaster('https://example.com/ms.tif');
+    const rgbDefault = lastTileLoader(setProps);
+    manager.setState(id, { mode: 'single', bands: [12] });
+    expect(lastTileLoader(setProps)).not.toBe(rgbDefault);
+  });
+});
+
 describe('LayerManager.reorder', () => {
   it('moves a layer within the draw order and clamps the index', async () => {
     const { manager } = makeHarness();

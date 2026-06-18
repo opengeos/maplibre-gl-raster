@@ -103,3 +103,70 @@ describe('WebMercatorCOGLayer', () => {
     expect(second).toBe(first);
   });
 });
+
+describe('WebMercatorCOGLayer geographic (EPSG:4326) sources', () => {
+  // Web-Mercator forward of ±180° longitude, the seam a global COG's padding
+  // overhangs (3857 X half-extent = 6378137·π ≈ 20037508 m).
+  const MERIDIAN_X = 6378137 * Math.PI;
+
+  it('substitutes a wrap-free mercator forward for an EPSG:4326 source', () => {
+    const { projectTo3857 } = invokeWithCrs(4326)!;
+    // Exactly 180° lands on the seam; in-range lon/lat use the standard
+    // spherical-mercator math (here lon 0 → x 0, the equator → y 0).
+    expect(projectTo3857(180, 0)[0]).toBeCloseTo(MERIDIAN_X, 3);
+    const [x0, y0] = projectTo3857(0, 0);
+    expect(x0).toBeCloseTo(0, 6);
+    expect(y0).toBeCloseTo(0, 6);
+  });
+
+  it('does not fold padding columns past the antimeridian (issue #444)', () => {
+    // The bug: proj4 wraps lon 180.5° back to −179.5°, so the X coordinate
+    // jumps from ≈ +20.04e6 to ≈ −19.9e6 — a ~40,000 km mesh edge. The fix
+    // keeps X continuous and monotonic just past the seam.
+    const { projectTo3857 } = invokeWithCrs(4326)!;
+    const justPast = projectTo3857(180.5, 0)[0];
+    expect(justPast).toBeGreaterThan(MERIDIAN_X);
+    expect(justPast - MERIDIAN_X).toBeLessThan(1e6); // a small step, not a wrap
+  });
+
+  it('round-trips lon/lat through forward then inverse', () => {
+    const { projectTo3857, projectFrom3857 } = invokeWithCrs(4326)!;
+    for (const [lon, lat] of [
+      [-179.95, 49.95],
+      [12.5, -33.3],
+      [180, 0],
+    ]) {
+      const [x, y] = projectTo3857(lon, lat);
+      const [lon2, lat2] = projectFrom3857(x, y);
+      expect(lon2).toBeCloseTo(lon, 6);
+      expect(lat2).toBeCloseTo(lat, 6);
+    }
+  });
+
+  it('reuses one stable forward function across calls (mesh-cache safe)', () => {
+    const descriptor = makeDescriptor();
+    const layer = Object.create(
+      WebMercatorCOGLayer.prototype,
+    ) as WebMercatorCOGLayer & {
+      state: { geotiff: { crs: number }; tilesetDescriptor: unknown };
+      _tilesetDescriptor: () => RasterTilesetDescriptor | undefined;
+    };
+    layer.state = { geotiff: { crs: 4326 }, tilesetDescriptor: descriptor };
+    const first = layer._tilesetDescriptor()!.projectTo3857;
+    expect(layer._tilesetDescriptor()!.projectTo3857).toBe(first);
+  });
+
+  it('leaves the 4326 bounds transforms untouched', () => {
+    const descriptor = invokeWithCrs(4326)!;
+    expect(descriptor.projectTo4326).toBe(proj4Like);
+    expect(descriptor.projectFrom4326).toBe(proj4Like);
+  });
+
+  it('does not patch other geographic datums (e.g. NAD83/EPSG:4269)', () => {
+    // Only WGS84 lon/lat maps to 3857 without a datum shift, so 4269 keeps the
+    // proj4-backed transform that performs one.
+    const descriptor = invokeWithCrs(4269)!;
+    expect(descriptor.projectTo3857).toBe(proj4Like);
+    expect(descriptor.projectFrom3857).toBe(proj4Like);
+  });
+});

@@ -48,13 +48,54 @@ import {
 /** Default engine when none is configured: the deck.gl GPU pipeline. */
 export const DEFAULT_ENGINE: RenderEngine = 'maplibre-gl-raster';
 
-// Module-scope so the getTileData identity stays stable for the lifetime of
-// the page. deck.gl's TileLayer treats a changed getTileData reference as
-// cache-invalidating, so allocating a fresh closure per rebuild would refetch
-// tiles on every state change (opacity drag, band swap, etc.). All layers
-// share one loader that always fetches the first up-to-4 bands.
-const FETCHED_BANDS = Array.from({ length: MAX_BAND_SLOTS }, (_, i) => i + 1);
-const getTileData = makeMultiBandTileLoader(FETCHED_BANDS);
+// deck.gl's TileLayer treats a changed getTileData reference as
+// cache-invalidating, so a layer's loader identity must stay stable across
+// state changes that don't alter which bands are sampled (opacity drag,
+// colormap swap, rescale). We therefore memoize one loader per distinct band
+// set: the same selection returns the same closure (deck.gl keeps the tile
+// cache), while a genuine band swap returns a new closure so the newly
+// selected bands — which aren't in the cached textures — get fetched. Keyed
+// by the sorted, deduped fetch list so re-ordering RGB channels within the
+// same set of bands reuses the cached textures.
+const tileLoaderCache = new globalThis.Map<
+  string,
+  ReturnType<typeof makeMultiBandTileLoader>
+>();
+
+/** Returns the memoized multi-band tile loader that fetches exactly `bands`. */
+function getTileDataForBands(
+  bands: number[],
+): ReturnType<typeof makeMultiBandTileLoader> {
+  const key = bands.join(',');
+  let loader = tileLoaderCache.get(key);
+  if (!loader) {
+    loader = makeMultiBandTileLoader(bands);
+    tileLoaderCache.set(key, loader);
+  }
+  return loader;
+}
+
+/**
+ * The band indexes a layer actually samples, deduped, sorted, and capped at
+ * the CompositeBands shader's {@link MAX_BAND_SLOTS} texture slots. Mirrors
+ * the `requested` logic in render-pipeline's buildRenderTile: RGB samples up
+ * to three bands (R, G, B); single-band / colormap / palette samples one. The
+ * render pipeline looks textures up by band number, not slot order, so the
+ * fetch order is irrelevant — sorting keeps the loader cache key stable when
+ * the user only reassigns channels. Always yields at least band 1 so a layer
+ * with an empty/invalid selection still fetches something to draw.
+ */
+function fetchBandsFor(layer: RasterLayer): number[] {
+  const selected =
+    layer.state.mode === 'rgb'
+      ? (layer.state.bands ?? [1, 2, 3])
+      : [layer.state.bands?.[0] ?? 1];
+  const unique = [
+    ...new Set(selected.filter((b) => Number.isInteger(b) && b >= 1)),
+  ].sort((a, b) => a - b);
+  if (unique.length === 0) unique.push(1);
+  return unique.slice(0, MAX_BAND_SLOTS);
+}
 
 /** Uploads an embedded color table as a 2D-array texture for the Colormap
  * shader module. Unlike `createColormapTexture` (which uses linear filtering
@@ -695,6 +736,11 @@ export class LayerManager {
 
   private _buildCogLayer(layer: RasterLayer): COGLayer<MultiBandTileData> {
     const renderTile = this._renderTileFor(layer);
+    // Fetch only the bands this layer's render pipeline samples, so any band
+    // (e.g. band 12 of a 12-band image) can be displayed — not just the first
+    // four. Memoized so the loader identity is stable unless the selection
+    // changes (see getTileDataForBands).
+    const getTileData = getTileDataForBands(fetchBandsFor(layer));
 
     // beforeId is read by @deck.gl/mapbox's MapboxOverlay in interleaved
     // mode but missing from COGLayer's narrower props type — build the props
