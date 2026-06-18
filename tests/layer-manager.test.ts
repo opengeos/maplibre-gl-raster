@@ -310,48 +310,50 @@ describe('LayerManager.setState / setVisible', () => {
 });
 
 describe('LayerManager tile-loader band selection', () => {
-  /** The getTileData callback on the most recently pushed deck.gl layer. */
-  const lastTileLoader = (setProps: ReturnType<typeof vi.fn>): unknown => {
-    const layers = setProps.mock.calls.at(-1)![0].layers as {
-      props: { getTileData: unknown };
-    }[];
-    return layers[0].props.getTileData;
+  /** The id of the most recently pushed deck.gl layer. The fetched band set is
+   * encoded in it, and deck.gl only refetches a layer's tiles when its id
+   * changes (the inner TileLayer has no getTileData updateTrigger), so the id
+   * is the observable signal for "will these bands be fetched". */
+  const lastLayerId = (setProps: ReturnType<typeof vi.fn>): string => {
+    const layers = setProps.mock.calls.at(-1)![0].layers as { id: string }[];
+    return layers[0].id;
   };
 
-  it('keeps the loader identity stable across non-band state changes', async () => {
-    // A changed getTileData reference invalidates deck.gl's tile cache, so an
-    // opacity drag must not allocate a new loader (which would refetch tiles).
+  it('keeps the layer id (band set) stable across non-band state changes', async () => {
+    // A changed id remounts the layer and refetches every tile, so an opacity
+    // drag must not change it.
     const { manager, setProps } = makeHarness({ bandCount: 12 });
     const id = await manager.addRaster('https://example.com/ms.tif');
-    const before = lastTileLoader(setProps);
+    const before = lastLayerId(setProps);
     manager.setState(id, { opacity: 0.3 });
-    expect(lastTileLoader(setProps)).toBe(before);
+    expect(lastLayerId(setProps)).toBe(before);
   });
 
-  it('swaps the loader when the band selection changes', async () => {
+  it('changes the layer id (forcing a refetch) when bands change', async () => {
     const { manager, setProps } = makeHarness({ bandCount: 12 });
     const id = await manager.addRaster('https://example.com/ms.tif');
-    const rgb123 = lastTileLoader(setProps);
+    const rgb123 = lastLayerId(setProps);
+    expect(rgb123).toContain('#b1-2-3'); // default RGB fetches bands 1,2,3
 
-    // A genuine band swap must refetch, so the loader reference changes…
+    // A genuine band swap must refetch, so the id changes…
     manager.setState(id, { bands: [4, 5, 6] });
-    const rgb456 = lastTileLoader(setProps);
+    const rgb456 = lastLayerId(setProps);
     expect(rgb456).not.toBe(rgb123);
+    expect(rgb456).toContain('#b4-5-6');
 
-    // …but reordering RGB channels within the same band set reuses textures.
+    // …but reordering RGB channels within the same band set keeps the id (and
+    // thus the cached textures): render-time channel reassignment, no refetch.
     manager.setState(id, { bands: [6, 5, 4] });
-    expect(lastTileLoader(setProps)).toBe(rgb456);
+    expect(lastLayerId(setProps)).toBe(rgb456);
   });
 
-  it('selects a high band for single-band rendering (band 12 of 12)', async () => {
-    // Band 12 must be fetchable so its pseudocolor renders (issue #485). The
-    // loader is memoized per band set, so [12] gets its own stable loader,
-    // distinct from the default RGB [1,2,3] loader.
+  it('fetches a high band for single-band rendering (band 12 of 12)', async () => {
+    // Band 12 must be fetched so its pseudocolor renders rather than falling
+    // back to band 1 (issue #485). Single-band fetches exactly that one band.
     const { manager, setProps } = makeHarness({ bandCount: 12 });
     const id = await manager.addRaster('https://example.com/ms.tif');
-    const rgbDefault = lastTileLoader(setProps);
     manager.setState(id, { mode: 'single', bands: [12] });
-    expect(lastTileLoader(setProps)).not.toBe(rgbDefault);
+    expect(lastLayerId(setProps)).toContain('#b12');
   });
 });
 
