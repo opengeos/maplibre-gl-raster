@@ -355,6 +355,17 @@ describe('LayerManager tile-loader band selection', () => {
     manager.setState(id, { mode: 'single', bands: [12] });
     expect(lastLayerId(setProps)).toContain('#b12');
   });
+
+  it('keeps every RGB-sampled band when state carries extra entries', async () => {
+    // With more entries than channels (R,G,B = first three), a naive
+    // dedupe-then-sort-then-cap could drop a sampled band: [12,1,2,3,4] sorts
+    // to [1,2,3,4,12] and caps to [1,2,3,4] — losing the red channel's 12.
+    // Only the first three (12,1,2) are sampled, so the fetched set is {1,2,12}.
+    const { manager, setProps } = makeHarness({ bandCount: 12 });
+    const id = await manager.addRaster('https://example.com/ms.tif');
+    manager.setState(id, { mode: 'rgb', bands: [12, 1, 2, 3, 4] });
+    expect(lastLayerId(setProps)).toContain('#b1-2-12');
+  });
 });
 
 describe('LayerManager.reorder', () => {

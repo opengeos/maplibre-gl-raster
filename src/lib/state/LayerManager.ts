@@ -49,23 +49,29 @@ import {
 export const DEFAULT_ENGINE: RenderEngine = 'maplibre-gl-raster';
 
 /**
- * The band indexes a layer actually samples, deduped, sorted, and capped at
- * the CompositeBands shader's {@link MAX_BAND_SLOTS} texture slots. Mirrors
- * the `requested` logic in render-pipeline's buildRenderTile: RGB samples up
- * to three bands (R, G, B); single-band / colormap / palette samples one. The
+ * The band indexes a layer actually samples, deduped and sorted. Mirrors the
+ * `requested` logic in render-pipeline's buildRenderTile: RGB samples the first
+ * three entries (R, G, B); single-band / colormap / palette the first one. The
  * render pipeline looks textures up by band number, not slot order, so the
  * fetch order is irrelevant — sorting makes the set order-independent, so
  * reassigning RGB channels among the same bands does not force a refetch.
  * Always yields at least band 1 so a layer with an empty/invalid selection
  * still fetches something to draw.
+ *
+ * The sampled channels are sliced off **before** dedupe/sort so a state that
+ * carries more entries than channels (e.g. `bands: [12, 1, 2, 3, 4]`) can't
+ * sort-then-cap a band that a channel still samples (here the red channel's
+ * 12) out of the fetched set. By construction the result is ≤ 3 entries — well
+ * within the CompositeBands shader's {@link MAX_BAND_SLOTS} texture slots.
  */
 function fetchBandsFor(layer: RasterLayer): number[] {
-  const selected =
+  const bands = layer.state.bands;
+  const sampled =
     layer.state.mode === 'rgb'
-      ? (layer.state.bands ?? [1, 2, 3])
-      : [layer.state.bands?.[0] ?? 1];
+      ? (bands && bands.length > 0 ? bands : [1, 2, 3]).slice(0, 3)
+      : [bands?.[0] ?? 1];
   const unique = [
-    ...new Set(selected.filter((b) => Number.isInteger(b) && b >= 1)),
+    ...new Set(sampled.filter((b) => Number.isInteger(b) && b >= 1)),
   ].sort((a, b) => a - b);
   if (unique.length === 0) unique.push(1);
   return unique.slice(0, MAX_BAND_SLOTS);
