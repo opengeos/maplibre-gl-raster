@@ -309,6 +309,65 @@ describe('LayerManager.setState / setVisible', () => {
   });
 });
 
+describe('LayerManager tile-loader band selection', () => {
+  /** The id of the most recently pushed deck.gl layer. The fetched band set is
+   * encoded in it, and deck.gl only refetches a layer's tiles when its id
+   * changes (the inner TileLayer has no getTileData updateTrigger), so the id
+   * is the observable signal for "will these bands be fetched". */
+  const lastLayerId = (setProps: ReturnType<typeof vi.fn>): string => {
+    const layers = setProps.mock.calls.at(-1)![0].layers as { id: string }[];
+    return layers[0].id;
+  };
+
+  it('keeps the layer id (band set) stable across non-band state changes', async () => {
+    // A changed id remounts the layer and refetches every tile, so an opacity
+    // drag must not change it.
+    const { manager, setProps } = makeHarness({ bandCount: 12 });
+    const id = await manager.addRaster('https://example.com/ms.tif');
+    const before = lastLayerId(setProps);
+    manager.setState(id, { opacity: 0.3 });
+    expect(lastLayerId(setProps)).toBe(before);
+  });
+
+  it('changes the layer id (forcing a refetch) when bands change', async () => {
+    const { manager, setProps } = makeHarness({ bandCount: 12 });
+    const id = await manager.addRaster('https://example.com/ms.tif');
+    const rgb123 = lastLayerId(setProps);
+    expect(rgb123).toContain('#b1-2-3'); // default RGB fetches bands 1,2,3
+
+    // A genuine band swap must refetch, so the id changes…
+    manager.setState(id, { bands: [4, 5, 6] });
+    const rgb456 = lastLayerId(setProps);
+    expect(rgb456).not.toBe(rgb123);
+    expect(rgb456).toContain('#b4-5-6');
+
+    // …but reordering RGB channels within the same band set keeps the id (and
+    // thus the cached textures): render-time channel reassignment, no refetch.
+    manager.setState(id, { bands: [6, 5, 4] });
+    expect(lastLayerId(setProps)).toBe(rgb456);
+  });
+
+  it('fetches a high band for single-band rendering (band 12 of 12)', async () => {
+    // Band 12 must be fetched so its pseudocolor renders rather than falling
+    // back to band 1 (issue #485). Single-band fetches exactly that one band.
+    const { manager, setProps } = makeHarness({ bandCount: 12 });
+    const id = await manager.addRaster('https://example.com/ms.tif');
+    manager.setState(id, { mode: 'single', bands: [12] });
+    expect(lastLayerId(setProps)).toContain('#b12');
+  });
+
+  it('keeps every RGB-sampled band when state carries extra entries', async () => {
+    // With more entries than channels (R,G,B = first three), a naive
+    // dedupe-then-sort-then-cap could drop a sampled band: [12,1,2,3,4] sorts
+    // to [1,2,3,4,12] and caps to [1,2,3,4] — losing the red channel's 12.
+    // Only the first three (12,1,2) are sampled, so the fetched set is {1,2,12}.
+    const { manager, setProps } = makeHarness({ bandCount: 12 });
+    const id = await manager.addRaster('https://example.com/ms.tif');
+    manager.setState(id, { mode: 'rgb', bands: [12, 1, 2, 3, 4] });
+    expect(lastLayerId(setProps)).toContain('#b1-2-12');
+  });
+});
+
 describe('LayerManager.reorder', () => {
   it('moves a layer within the draw order and clamps the index', async () => {
     const { manager } = makeHarness();

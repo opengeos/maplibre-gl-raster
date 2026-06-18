@@ -11,7 +11,6 @@ import {
   statsForBand,
 } from '../raster/render-pipeline';
 import type { AutoStats, BandStats } from '../raster/stats';
-import { MAX_BAND_SLOTS } from '../raster/tile-loader';
 import type { RasterLayer } from '../state/RasterLayer';
 import { BandHistogram } from './BandHistogram';
 import { ColormapPicker, PALETTE_COLORMAP } from './ColormapPicker';
@@ -292,8 +291,12 @@ export class SettingsSection {
 
     const state = layer.state;
     const mode: RasterMode = state.mode;
+    // Offer every band the image carries. The CompositeBands shader only
+    // composites up to MAX_BAND_SLOTS bands at once, but that limit is on
+    // simultaneously-rendered channels (RGB = 3, single = 1), not on which
+    // band a channel may point at — so a 12-band image exposes all 12 here.
     const bandOptions = Array.from(
-      { length: Math.min(layer.bandCount ?? MAX_BAND_SLOTS, MAX_BAND_SLOTS) },
+      { length: Math.max(1, layer.bandCount ?? 1) },
       (_, i) => i + 1,
     );
 

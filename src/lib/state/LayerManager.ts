@@ -48,13 +48,52 @@ import {
 /** Default engine when none is configured: the deck.gl GPU pipeline. */
 export const DEFAULT_ENGINE: RenderEngine = 'maplibre-gl-raster';
 
-// Module-scope so the getTileData identity stays stable for the lifetime of
-// the page. deck.gl's TileLayer treats a changed getTileData reference as
-// cache-invalidating, so allocating a fresh closure per rebuild would refetch
-// tiles on every state change (opacity drag, band swap, etc.). All layers
-// share one loader that always fetches the first up-to-4 bands.
-const FETCHED_BANDS = Array.from({ length: MAX_BAND_SLOTS }, (_, i) => i + 1);
-const getTileData = makeMultiBandTileLoader(FETCHED_BANDS);
+/**
+ * The band indexes a layer actually samples, deduped and sorted. Mirrors the
+ * `requested` logic in render-pipeline's buildRenderTile: RGB samples the first
+ * three entries (R, G, B); single-band / colormap / palette the first one. The
+ * render pipeline looks textures up by band number, not slot order, so the
+ * fetch order is irrelevant — sorting makes the set order-independent, so
+ * reassigning RGB channels among the same bands does not force a refetch.
+ * Always yields at least band 1 so a layer with an empty/invalid selection
+ * still fetches something to draw.
+ *
+ * The sampled channels are sliced off **before** dedupe/sort so a state that
+ * carries more entries than channels (e.g. `bands: [12, 1, 2, 3, 4]`) can't
+ * sort-then-cap a band that a channel still samples (here the red channel's
+ * 12) out of the fetched set. By construction the result is ≤ 3 entries — well
+ * within the CompositeBands shader's {@link MAX_BAND_SLOTS} texture slots.
+ */
+function fetchBandsFor(layer: RasterLayer): number[] {
+  const bands = layer.state.bands;
+  const sampled =
+    layer.state.mode === 'rgb'
+      ? (bands && bands.length > 0 ? bands : [1, 2, 3]).slice(0, 3)
+      : [bands?.[0] ?? 1];
+  const unique = [
+    ...new Set(sampled.filter((b) => Number.isInteger(b) && b >= 1)),
+  ].sort((a, b) => a - b);
+  if (unique.length === 0) unique.push(1);
+  return unique.slice(0, MAX_BAND_SLOTS);
+}
+
+/**
+ * The deck.gl layer id for a raster layer, with its fetched band set encoded.
+ *
+ * The tile loader only fetches {@link fetchBandsFor} (≤ MAX_BAND_SLOTS) bands,
+ * so a single-band view of e.g. band 12 needs band 12 in the tile textures.
+ * deck.gl's `TileLayer` does **not** refetch when `getTileData` changes — its
+ * RasterTileLayer wrapper sets no `getTileData` updateTrigger, so a swapped
+ * loader closure is silently ignored and the previously fetched bands stay
+ * cached. The one reliable way to refetch is to remount the layer, which
+ * deck.gl does when the layer id changes. Encoding the (sorted) band set in the
+ * id therefore makes a band-selection change refetch the newly selected bands,
+ * while leaving the id — and thus the tile cache — stable across opacity,
+ * colormap, rescale and RGB-channel-reorder changes that don't alter the set.
+ */
+function cogLayerId(layer: RasterLayer, fetchBands: number[]): string {
+  return `${layer.id}#b${fetchBands.join('-')}`;
+}
 
 /** Uploads an embedded color table as a 2D-array texture for the Colormap
  * shader module. Unlike `createColormapTexture` (which uses linear filtering
@@ -695,6 +734,13 @@ export class LayerManager {
 
   private _buildCogLayer(layer: RasterLayer): COGLayer<MultiBandTileData> {
     const renderTile = this._renderTileFor(layer);
+    // Fetch only the bands this layer's render pipeline samples, so any band
+    // (e.g. band 12 of a 12-band image) can be displayed — not just the first
+    // four. The id encodes the band set so a band change remounts the layer and
+    // refetches (see cogLayerId); within a set the loader closure's identity is
+    // irrelevant (the inner TileLayer ignores getTileData changes).
+    const fetchBands = fetchBandsFor(layer);
+    const getTileData = makeMultiBandTileLoader(fetchBands);
 
     // beforeId is read by @deck.gl/mapbox's MapboxOverlay in interleaved
     // mode but missing from COGLayer's narrower props type — build the props
@@ -702,7 +748,7 @@ export class LayerManager {
     // excess-property check. Only forward ids that exist in the current
     // style; a stale id would make the overlay throw on the next style event.
     const cogProps = {
-      id: layer.id,
+      id: cogLayerId(layer, fetchBands),
       geotiff: layer.geotiff!,
       opacity: layer.state.opacity,
       getTileData,

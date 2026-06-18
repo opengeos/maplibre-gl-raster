@@ -180,3 +180,48 @@ describe('SettingsSection colorbar', () => {
     expect(findColorbar(section)).toBeNull();
   });
 });
+
+describe('SettingsSection band options', () => {
+  /** A loaded layer with a configurable band count. */
+  function loadedLayer(
+    bandCount: number,
+    overrides: Partial<RasterLayerState> = {},
+  ): RasterLayer {
+    return {
+      name: 'ms.tif',
+      loading: false,
+      error: null,
+      bandCount,
+      bandNames: null,
+      palette: null,
+      autoStats: null,
+      state: createLayerState({ mode: 'single', bands: [1], ...overrides }),
+    } as RasterLayer;
+  }
+
+  it('offers every band of a 12-band image in single mode (not just 4)', () => {
+    // Regression for issue #485: the dropdown was capped at MAX_BAND_SLOTS (4).
+    const layer = loadedLayer(12);
+    const section = new SettingsSection(() => layer, () => {});
+    section.render();
+    const band = section.el.querySelector<HTMLSelectElement>(
+      '[aria-label="band"]',
+    )!;
+    expect(band.querySelectorAll('option')).toHaveLength(12);
+    expect(band.querySelector('option:last-child')!.getAttribute('value')).toBe(
+      '12',
+    );
+  });
+
+  it('offers every band for each RGB channel of a 12-band image', () => {
+    const layer = loadedLayer(12, { mode: 'rgb', bands: [1, 2, 3] });
+    const section = new SettingsSection(() => layer, () => {});
+    section.render();
+    for (const ch of ['band-r', 'band-g', 'band-b']) {
+      const sel = section.el.querySelector<HTMLSelectElement>(
+        `[aria-label="${ch}"]`,
+      )!;
+      expect(sel.querySelectorAll('option')).toHaveLength(12);
+    }
+  });
+});
