@@ -1,8 +1,17 @@
 import type { GeoTIFF } from '@developmentseed/geotiff';
 
 const MODEL_TYPE_PROJECTED = 1;
+const MODEL_TYPE_GEOGRAPHIC = 2;
 const USER_DEFINED = 32767;
 const EPSG_WEB_MERCATOR = 3857;
+
+// Root keywords of the WKT/ESRI-PE-string flavours a GeoTIFF citation can carry.
+// ArcGIS writes the full projection as `GTCitationGeoKey` / `PCSCitationGeoKey`
+// (the latter prefixed with `ESRI PE String = `) when the numeric geo keys
+// cannot express it. Match the first root so the `ESRI PE String = ` (or any
+// other) prefix is stripped by slicing from the keyword.
+const WKT_ROOT =
+  /\b(?:PROJCS|PROJCRS|GEOGCS|GEOGCRS|GEOCCS|GEODCRS|BOUNDCRS|COMPD_CS|COMPOUNDCRS|VERT_CS|VERTCRS|LOCAL_CS|FITTED_CS)\s*\[/i;
 
 // Legacy and ESRI codes that are all equivalent to EPSG:3857 (spherical Web
 // Mercator): EPSG:3785 (deprecated), 900913 (Google), and ESRI 102100/102113.
@@ -32,6 +41,27 @@ function citationText(gkd: MutableGeoKeys): string {
 }
 
 /**
+ * Pull an embedded WKT (or ESRI PE string) definition out of a citation geo
+ * key, if one is present. The projected citation is preferred because that is
+ * where ArcGIS writes the full `PROJCS[...]` for an exotic projection; the
+ * generic and geodetic citations are checked as fallbacks. Returns the WKT from
+ * the first matching root keyword onward (dropping any `ESRI PE String = `
+ * prefix), or `null` when no citation carries one.
+ */
+function wktFromCitation(gkd: MutableGeoKeys): string | null {
+  for (const citation of [
+    gkd.projectedCitation,
+    gkd.citation,
+    gkd.geodeticCitation,
+  ]) {
+    if (typeof citation !== 'string') continue;
+    const match = WKT_ROOT.exec(citation);
+    if (match) return citation.slice(match.index);
+  }
+  return null;
+}
+
+/**
  * Repair GeoTIFF CRS geo keys so {@link import('@developmentseed/geotiff').Overview.crs}
  * resolves them to the right projection, in place. Two problems are fixed:
  *
@@ -57,6 +87,15 @@ function citationText(gkd: MutableGeoKeys): string {
  * Files with a valid model type and a non-Web-Mercator EPSG/projection are left
  * untouched. Must run before any `Overview.crs` access (which caches its
  * result), so callers invoke it immediately after opening the GeoTIFF.
+ *
+ * 3. **A projection the geo keys cannot express.** Some projections have no
+ *    `ProjCoordTransGeoKey` (e.g. equal-area world CRSes such as ESRI:54009
+ *    World Mollweide), so ArcGIS/GDAL leave the model type user-defined and the
+ *    full definition only in the citation as an `ESRI PE String = PROJCS[...]`
+ *    WKT. `crsFromGeoKeys` then throws `Unsupported GeoTIFF model type: 32767`.
+ *    {@link recoverCrsFromWktCitation} seeds the cached CRS from that WKT so the
+ *    consuming layer (which calls `parseWkt`/proj4) builds the projection from
+ *    it. This is projection-agnostic: proj4 understands the ESRI/OGC names.
  *
  * @param tiff - The opened GeoTIFF to repair in place.
  */
@@ -88,4 +127,45 @@ export function repairUserDefinedProjectedCrs(tiff: GeoTIFF): void {
       gkd.modelType = MODEL_TYPE_PROJECTED;
     }
   }
+
+  recoverCrsFromWktCitation(tiff);
+}
+
+/**
+ * Seed the GeoTIFF's cached CRS from an embedded WKT citation when the geo keys
+ * still cannot describe the projection after {@link repairUserDefinedProjectedCrs}
+ * has run. `crsFromGeoKeys` only accepts model type 1 (projected) or 2
+ * (geographic) and throws otherwise; when the model type is still user-defined
+ * (no `ProjMethodGeoKey` to promote it) the only definition is the WKT in the
+ * citation. Setting the (lazily computed, single-shot) `_crs` cache to that WKT
+ * string makes the getter return it instead of throwing, and the consuming layer
+ * resolves it through `parseWkt` (wkt-parser + proj4).
+ *
+ * No-ops when the model type is resolvable, when the CRS is already cached, or
+ * when no citation carries a WKT (so the original, descriptive error still
+ * surfaces).
+ */
+function recoverCrsFromWktCitation(tiff: GeoTIFF): void {
+  // `gkd` is shared by reference with every overview and with the GeoTIFF
+  // itself (whose `crs` getter reads it), so the first overview's keys reflect
+  // the repairs applied above.
+  const gkd = tiff.overviews[0]?.gkd as unknown as MutableGeoKeys | undefined;
+  if (!gkd) return;
+
+  // crsFromGeoKeys handles these two; leave them to the upstream getter.
+  if (
+    gkd.modelType === MODEL_TYPE_PROJECTED ||
+    gkd.modelType === MODEL_TYPE_GEOGRAPHIC
+  ) {
+    return;
+  }
+
+  const wkt = wktFromCitation(gkd);
+  if (!wkt) return;
+
+  // `_crs` is the private cache the `crs` getter fills on first access; it is a
+  // plain field on the instance we own. Only seed it if untouched so we never
+  // clobber an already-resolved CRS.
+  const cache = tiff as unknown as { _crs?: unknown };
+  if (cache._crs === undefined) cache._crs = wkt;
 }
