@@ -152,4 +152,86 @@ describe('repairUserDefinedProjectedCrs', () => {
     expect(tiff.overviews[0].gkd.projectedCRS).toBe(USER_DEFINED);
     expect(tiff.overviews[0].gkd.modelType).toBe(PROJECTED);
   });
+
+  describe('WKT-citation CRS recovery', () => {
+    // ArcGIS exports an equal-area world CRS (no ProjCoordTransGeoKey) with a
+    // user-defined model type and the full definition only in the PE string.
+    const MOLLWEIDE_WKT =
+      'PROJCS["World_Mollweide",GEOGCS["GCS_WGS_1984",' +
+      'DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],' +
+      'PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],' +
+      'PROJECTION["Mollweide"],PARAMETER["False_Easting",0.0],' +
+      'PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",0.0],' +
+      'UNIT["Meter",1.0]]';
+
+    const crsCache = (tiff: GeoTIFF): unknown =>
+      (tiff as unknown as { _crs?: unknown })._crs;
+
+    it('seeds the cached CRS from an ESRI PE string when keys cannot express it', () => {
+      const tiff = fakeTiff({
+        modelType: USER_DEFINED,
+        projMethod: null,
+        projectedCitation: `ESRI PE String = ${MOLLWEIDE_WKT}`,
+      });
+      repairUserDefinedProjectedCrs(tiff);
+      // No projection method to promote the model type, so it stays as-is...
+      expect(tiff.overviews[0].gkd.modelType).toBe(USER_DEFINED);
+      // ...but the WKT (with the `ESRI PE String = ` prefix dropped) is cached.
+      expect(crsCache(tiff)).toBe(MOLLWEIDE_WKT);
+    });
+
+    it('falls back to the geodetic citation when the projected one is absent', () => {
+      const tiff = fakeTiff({
+        modelType: null,
+        projMethod: null,
+        geodeticCitation: MOLLWEIDE_WKT,
+      });
+      repairUserDefinedProjectedCrs(tiff);
+      expect(crsCache(tiff)).toBe(MOLLWEIDE_WKT);
+    });
+
+    it('leaves the CRS unset when no citation carries a WKT', () => {
+      const tiff = fakeTiff({
+        modelType: USER_DEFINED,
+        projMethod: null,
+        citation: 'World_Mollweide',
+      });
+      repairUserDefinedProjectedCrs(tiff);
+      // Just a name, no PROJCS[...] -> nothing to recover; the original
+      // crsFromGeoKeys error is left to surface.
+      expect(crsCache(tiff)).toBeUndefined();
+    });
+
+    it('does not seed the CRS for a resolvable (projected) model type', () => {
+      const tiff = fakeTiff({
+        modelType: USER_DEFINED,
+        projMethod: 7, // promoted to projected -> resolvable from keys
+        projectedCitation: `ESRI PE String = ${MOLLWEIDE_WKT}`,
+      });
+      repairUserDefinedProjectedCrs(tiff);
+      expect(tiff.overviews[0].gkd.modelType).toBe(PROJECTED);
+      expect(crsCache(tiff)).toBeUndefined();
+    });
+
+    it('does not seed the CRS for a geographic model type', () => {
+      const tiff = fakeTiff({
+        modelType: GEOGRAPHIC,
+        projMethod: null,
+        geodeticCitation: 'GEOGCS["GCS_WGS_1984",...]',
+      });
+      repairUserDefinedProjectedCrs(tiff);
+      expect(crsCache(tiff)).toBeUndefined();
+    });
+
+    it('does not clobber an already-cached CRS', () => {
+      const tiff = fakeTiff({
+        modelType: USER_DEFINED,
+        projMethod: null,
+        projectedCitation: `ESRI PE String = ${MOLLWEIDE_WKT}`,
+      });
+      (tiff as unknown as { _crs?: unknown })._crs = 4326;
+      repairUserDefinedProjectedCrs(tiff);
+      expect(crsCache(tiff)).toBe(4326);
+    });
+  });
 });

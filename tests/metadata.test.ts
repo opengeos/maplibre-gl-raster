@@ -142,6 +142,17 @@ describe('crsLabel', () => {
       label: 'User-defined: Custom WGS84 variant',
     });
   });
+  it('names a WKT/ESRI-PE string CRS from its PROJCS name', () => {
+    expect(
+      crsLabel('PROJCS["World_Mollweide",GEOGCS["GCS_WGS_1984",...]'),
+    ).toEqual({ code: null, label: 'User-defined: World_Mollweide' });
+  });
+  it('labels a nameless WKT string as user-defined', () => {
+    expect(crsLabel('SOMETHING_ELSE[...]')).toEqual({
+      code: null,
+      label: 'User-defined',
+    });
+  });
   it('falls back to unknown for missing input', () => {
     expect(crsLabel(null).label).toBe('unknown');
   });

@@ -280,13 +280,24 @@ function escapeText(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 }
 
-/** Resolve the EPSG code (or null) and a display label from a `crs` value. */
-export function crsLabel(crs: number | { name?: string } | null | undefined): {
+/** Resolve the EPSG code (or null) and a display label from a `crs` value.
+ * A `crs` may be a numeric EPSG code, a PROJJSON object, or a WKT/ESRI-PE
+ * string (the recovery path for projections the geo keys cannot express, see
+ * repair-geokeys.ts). */
+export function crsLabel(
+  crs: number | string | { name?: string } | null | undefined,
+): {
   code: number | null;
   label: string;
 } {
   if (typeof crs === 'number') {
     return { code: crs, label: `EPSG:${crs}` };
+  }
+  if (typeof crs === 'string') {
+    // Pull the CRS name out of the leading `PROJCS["name",...]` (or PROJCRS /
+    // GEOGCS / GEOGCRS) so the panel shows e.g. "User-defined: World_Mollweide".
+    const name = /\b(?:PROJCS|PROJCRS|GEOGCS|GEOGCRS)\s*\[\s*"([^"]+)"/i.exec(crs);
+    return { code: null, label: name ? `User-defined: ${name[1]}` : 'User-defined' };
   }
   if (crs && typeof crs === 'object' && 'name' in crs && typeof crs.name === 'string') {
     return { code: null, label: `User-defined: ${crs.name}` };
