@@ -237,6 +237,12 @@ export class SettingsSection {
     this._inspectBtn.setAttribute('aria-pressed', String(active));
   }
 
+  /** Public hook to re-sync the inspect button after the host toggles inspect
+   * mode programmatically (e.g. via RasterControl.setInspect). */
+  syncInspect(): void {
+    this._syncInspectButton();
+  }
+
   /** Reacts to a LayerManager change event: rebuilds unless the change came
    * from this UI or a histogram drag is active (deferred until drag end). */
   notifyChange(): void {

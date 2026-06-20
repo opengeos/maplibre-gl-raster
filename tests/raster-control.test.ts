@@ -140,4 +140,47 @@ describe('RasterControl pixel inspector wiring', () => {
     expect((control as unknown as Internals)._state.collapsed).toBe(false);
     control.onRemove();
   });
+
+  it('toggles inspect mode through the public API', () => {
+    const control = new RasterControl({ collapsed: false });
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+
+    expect(control.isInspecting()).toBe(false);
+
+    control.setInspect(true);
+    expect(control.isInspecting()).toBe(true);
+    expect((control as unknown as Internals)._inspector!.enabled).toBe(true);
+
+    // Idempotent: enabling again stays enabled.
+    control.setInspect(true);
+    expect(control.isInspecting()).toBe(true);
+
+    control.setInspect(false);
+    expect(control.isInspecting()).toBe(false);
+
+    control.onRemove();
+  });
+
+  it('reflects programmatic inspect toggling on the panel button', () => {
+    const control = new RasterControl({ collapsed: false });
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+    const panel = (control as unknown as { _panel?: HTMLElement })._panel!;
+    const button = panel.querySelector<HTMLButtonElement>(
+      'button[aria-label="inspect-toggle"]',
+    )!;
+    expect(button).not.toBeNull();
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+
+    control.setInspect(true);
+    expect(button.classList.contains('active')).toBe(true);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+
+    control.setInspect(false);
+    expect(button.classList.contains('active')).toBe(false);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+
+    control.onRemove();
+  });
 });

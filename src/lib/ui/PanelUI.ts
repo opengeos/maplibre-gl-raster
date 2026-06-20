@@ -119,6 +119,11 @@ export class PanelUI {
     this._settings.render();
   }
 
+  /** Reflects an externally-toggled inspect mode on the Settings inspect button. */
+  syncInspect(): void {
+    this._settings.syncInspect();
+  }
+
   /** Detaches event handlers and removes the UI from the DOM. */
   destroy(): void {
     for (const off of this._unsubscribe) off();
