@@ -398,6 +398,31 @@ export class RasterControl implements IControl {
   }
 
   /**
+   * Toggles pixel-inspect mode on or off — the same mode the panel's Inspect
+   * button drives. While active, a map click reads the source band values of
+   * the selected raster (see {@link selectRaster}) at that point and shows them
+   * in a popup. Lets a host application offer inspection from its own UI.
+   *
+   * @param enabled - `true` to start inspecting, `false` to stop
+   */
+  setInspect(enabled: boolean): void {
+    if (!this._inspector) return;
+    if (enabled) this._inspector.enable();
+    else this._inspector.disable();
+    // Keep the panel's Inspect button in sync when toggled programmatically.
+    this._panelUI?.syncInspect();
+  }
+
+  /**
+   * Whether pixel-inspect mode is currently active.
+   *
+   * @returns `true` while inspecting
+   */
+  isInspecting(): boolean {
+    return this._inspector?.enabled ?? false;
+  }
+
+  /**
    * Gets the active rendering engine.
    *
    * @returns The current engine, or the configured default before the control

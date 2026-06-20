@@ -13,6 +13,7 @@ export {
   sampleColormapStops,
 } from './lib/raster/colormap-sampler';
 export { autoRangeFor, statsForBand } from './lib/raster/render-pipeline';
+export { readPixelValues } from './lib/raster/inspect';
 export { createResilientEpsgResolver } from './lib/raster/epsg-resolver';
 export { summarizeGeoTIFF } from './lib/raster/metadata';
 export {
@@ -62,6 +63,7 @@ export type {
   OverviewSummary,
 } from './lib/raster/metadata';
 export type { AutoStats, BandStats } from './lib/raster/stats';
+export type { BandReading, PixelReading } from './lib/raster/inspect';
 export type { ColormapOption } from './lib/raster/colormaps';
 export type { ResilientEpsgResolverOptions } from './lib/raster/epsg-resolver';
 export type { EpsgResolver } from '@developmentseed/proj';
