@@ -1,3 +1,4 @@
+import type { RasterSampleDataset } from '../core/types';
 import type { LayerManager } from '../state/LayerManager';
 import { AddDataSection } from './AddDataSection';
 import { el } from './dom';
@@ -28,7 +29,12 @@ export class PanelUI {
   constructor(
     container: HTMLElement,
     manager: LayerManager,
-    options?: { defaultUrl?: string; inspect?: InspectHooks },
+    options?: {
+      defaultUrl?: string;
+      sampleData?: RasterSampleDataset[];
+      sampleDataLabel?: string;
+      inspect?: InspectHooks;
+    },
   ) {
     this._manager = manager;
 
@@ -44,6 +50,8 @@ export class PanelUI {
 
     const addData = new AddDataSection({
       initialUrl: options?.defaultUrl,
+      sampleData: options?.sampleData,
+      sampleDataLabel: options?.sampleDataLabel,
       onAddUrl: (url, beforeId) => {
         // Errors surface via the manager's 'error' event and the layer row.
         void this._manager.addRaster(url, { beforeId }).catch(() => {});

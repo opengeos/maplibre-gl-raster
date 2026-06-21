@@ -114,6 +114,9 @@ The main control class implementing MapLibre's `IControl` interface.
 | `interleaved` | `boolean` | `true`        | Render the deck.gl overlay interleaved with the basemap layers            |
 | `defaultUrl`  | `string`  | `''`          | Prefills the Add data URL input (not loaded until the user clicks Load)  |
 | `autoLoad`    | `boolean` | `false`       | Load `defaultUrl` automatically when the control is added to the map     |
+| `sampleData`  | `RasterSampleDataset[]` | - | Sample COGs offered as a "Load sample data" dropdown above the URL input; picking one fills the input (hidden when empty) |
+| `sampleDataLabel` | `string` | `'Load sample data...'` | Placeholder shown in the sample-data dropdown |
+| `closeOnOutsideClick` | `boolean` | `true` | Collapse the panel when clicking outside it; set `false` to close only via the header button |
 | `engine`      | `RenderEngine` | `'maplibre-gl-raster'` | Initial rendering backend; switchable at runtime from the panel    |
 
 #### Raster Methods
