@@ -1,8 +1,14 @@
+import type { RasterSampleDataset } from '../core/types';
 import { el } from './dom';
 
 export type AddDataSectionOptions = {
   /** Prefills the URL input (not loaded until the user clicks Load). */
   initialUrl?: string;
+  /** Sample datasets offered as a "Load sample data" dropdown above the URL
+   * input; picking one fills the input. Omit/empty to hide the dropdown. */
+  sampleData?: RasterSampleDataset[];
+  /** Placeholder for the sample-data dropdown. */
+  sampleDataLabel?: string;
   /** Called with a remote COG URL and the optional before-layer id. */
   onAddUrl: (url: string, beforeId?: string) => void;
   /** Called with a locally selected or dropped GeoTIFF file and the
@@ -72,6 +78,77 @@ export class AddDataSection {
 
     const urlRow = el('div', { className: 'mlr-row' }, input, loadBtn);
 
+    // Optional "Load sample data" dropdown. A custom (not native <select>)
+    // dropdown so the menu stays fully themeable in dark mode. Picking an
+    // entry fills the URL input; the input stays empty otherwise (no
+    // prefilled sample). Hidden when no samples are supplied.
+    const samples = options.sampleData ?? [];
+    let sampleRow: HTMLElement | undefined;
+    if (samples.length > 0) {
+      const placeholder = options.sampleDataLabel ?? 'Load sample data...';
+      const triggerLabel = el('span', {
+        className: 'mlr-sample-trigger-label',
+        text: placeholder,
+      });
+      const trigger = el(
+        'button',
+        {
+          className: 'mlr-sample-trigger',
+          type: 'button',
+          ariaLabel: placeholder,
+          attrs: { 'aria-haspopup': 'listbox', 'aria-expanded': 'false' },
+        },
+        triggerLabel,
+        el('span', { className: 'mlr-sample-caret', text: '▾' }),
+      );
+      const menu = el('div', {
+        className: 'mlr-sample-menu',
+        attrs: { role: 'listbox' },
+      });
+      menu.hidden = true;
+
+      let menuOpen = false;
+      const setMenuOpen = (open: boolean): void => {
+        menuOpen = open;
+        menu.hidden = !open;
+        trigger.setAttribute('aria-expanded', String(open));
+        trigger.classList.toggle('open', open);
+        if (open) (menu.firstElementChild as HTMLElement | null)?.focus();
+      };
+
+      for (const sample of samples) {
+        const option = el('button', {
+          className: 'mlr-sample-option',
+          type: 'button',
+          text: sample.label,
+          title: sample.url,
+          attrs: { role: 'option' },
+        });
+        option.addEventListener('click', () => {
+          setMenuOpen(false);
+          trigger.focus();
+          input.value = sample.url;
+          loadBtn.disabled = input.value.trim().length === 0;
+        });
+        menu.appendChild(option);
+      }
+
+      trigger.addEventListener('click', () => setMenuOpen(!menuOpen));
+      sampleRow = el('div', { className: 'mlr-sample-row' }, trigger, menu);
+      // Close on Escape or when focus leaves the dropdown (avoids a
+      // document-level listener that would need explicit teardown).
+      sampleRow.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Escape' && menuOpen) {
+          setMenuOpen(false);
+          trigger.focus();
+        }
+      });
+      sampleRow.addEventListener('focusout', (e) => {
+        const next = (e as FocusEvent).relatedTarget as Node | null;
+        if (!next || !sampleRow!.contains(next)) setMenuOpen(false);
+      });
+    }
+
     const fileInput = el('input', {
       type: 'file',
       ariaLabel: 'raster-file',
@@ -118,6 +195,7 @@ export class AddDataSection {
       'div',
       { className: 'mlr-section mlr-add-data' },
       el('div', { className: 'mlr-section-title', text: 'Add data' }),
+      ...(sampleRow ? [sampleRow] : []),
       urlRow,
       dropZone,
       beforeIdInput,

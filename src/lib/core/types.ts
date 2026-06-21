@@ -142,6 +142,18 @@ export interface AddRasterOptions {
 }
 
 /**
+ * A named sample dataset offered as a one-click entry in the panel's
+ * "Load sample data" dropdown. Picking it fills the Add data URL input.
+ */
+export interface RasterSampleDataset {
+  /** Label shown in the dropdown (e.g. 'Land cover'). */
+  label: string;
+
+  /** COG URL filled into the Add data input when this entry is picked. */
+  url: string;
+}
+
+/**
  * Options for configuring the RasterControl
  */
 export interface RasterControlOptions {
@@ -203,6 +215,28 @@ export interface RasterControlOptions {
    * @default false
    */
   autoLoad?: boolean;
+
+  /**
+   * Sample datasets offered as a one-click "Load sample data" dropdown above
+   * the Add data URL input. Picking one fills the input (the user still clicks
+   * Load). Omit or leave empty to hide the dropdown, so the input stays clean
+   * for the user's own URLs instead of a prefilled sample.
+   */
+  sampleData?: RasterSampleDataset[];
+
+  /**
+   * Placeholder shown in the sample-data dropdown before a selection.
+   * Ignored when {@link sampleData} is empty.
+   * @default 'Load sample data...'
+   */
+  sampleDataLabel?: string;
+
+  /**
+   * Collapse the panel when the user clicks outside it (e.g. on the map). Set
+   * to `false` to keep the panel open until the header close button is used.
+   * @default true
+   */
+  closeOnOutsideClick?: boolean;
 
   /**
    * Resolves a GeoTIFF's numeric EPSG code to a projection definition used for

@@ -3,9 +3,18 @@ import { RasterControl } from '../../src/index';
 import '../../src/index.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-// A public Cloud Optimized GeoTIFF prefilled in the Add data input
-// (not loaded until the user clicks Load).
-const DEMO_COG = 'https://data.source.coop/giswqs/opengeos/nlcd_2021_land_cover_30m.tif';
+// Public Cloud Optimized GeoTIFFs offered as one-click samples in the panel's
+// "Load sample data" dropdown (the URL input stays empty until one is picked).
+const SAMPLE_COGS = [
+  {
+    label: 'Land cover',
+    url: 'https://data.source.coop/giswqs/opengeos/nlcd_2021_land_cover_30m.tif',
+  },
+  {
+    label: 'Elevation (DEM)',
+    url: 'https://data.source.coop/giswqs/opengeos/dem.tif',
+  },
+];
 
 // Create map
 const map = new maplibregl.Map({
@@ -26,11 +35,14 @@ map.on('load', () => {
   // Set collapsed: true to start with just the 29x29 button
   const rasterControl = new RasterControl({
     collapsed: false,
-    defaultUrl: DEMO_COG,
+    // Offer samples as an opt-in dropdown instead of prefilling the input.
+    sampleData: SAMPLE_COGS,
+    // Keep the panel open until the close button is clicked.
+    closeOnOutsideClick: false,
   });
 
   // Add control to the map
-  map.addControl(rasterControl, 'top-right');
+  map.addControl(rasterControl, 'top-left');
 
   // Listen for raster layer events
   rasterControl.on('rasteradd', (event) => {

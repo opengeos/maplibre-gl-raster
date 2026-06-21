@@ -29,6 +29,9 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   interleaved: true,
   defaultUrl: '',
   autoLoad: false,
+  sampleData: [],
+  sampleDataLabel: 'Load sample data...',
+  closeOnOutsideClick: true,
   engine: 'maplibre-gl-raster',
   epsgResolver: createResilientEpsgResolver(),
 };
@@ -144,6 +147,8 @@ export class RasterControl implements IControl {
         // When auto-loading, leave the input empty — the raster is already
         // on its way, and a prefilled Load button would just add a duplicate.
         defaultUrl: autoLoading ? '' : this._options.defaultUrl,
+        sampleData: this._options.sampleData,
+        sampleDataLabel: this._options.sampleDataLabel,
         inspect: {
           onToggle: () => this._inspector?.toggle(),
           isActive: () => this._inspector?.enabled ?? false,
@@ -792,26 +797,30 @@ export class RasterControl implements IControl {
    * Setup event listeners for panel positioning and click-outside behavior.
    */
   private _setupEventListeners(): void {
-    // Click outside to close (check both container and panel since they're now separate)
-    this._clickOutsideHandler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      // Ignore clicks whose target was detached mid-event (e.g. a panel
-      // button whose click handler re-rendered the settings UI) — contains()
-      // would report false and wrongly collapse the panel.
-      if (!target.isConnected) return;
-      // While inspecting, a map click is the inspect gesture, not a request to
-      // dismiss the panel — keep the panel open so the toggle stays reachable.
-      if (this._inspector?.enabled) return;
-      if (
-        this._container &&
-        this._panel &&
-        !this._container.contains(target) &&
-        !this._panel.contains(target)
-      ) {
-        this.collapse();
-      }
-    };
-    document.addEventListener('click', this._clickOutsideHandler);
+    // Click outside to close (check both container and panel since they're now
+    // separate). Skipped when closeOnOutsideClick is false, so the panel stays
+    // open until the header close button is used.
+    if (this._options.closeOnOutsideClick !== false) {
+      this._clickOutsideHandler = (e: MouseEvent) => {
+        const target = e.target as Node;
+        // Ignore clicks whose target was detached mid-event (e.g. a panel
+        // button whose click handler re-rendered the settings UI) — contains()
+        // would report false and wrongly collapse the panel.
+        if (!target.isConnected) return;
+        // While inspecting, a map click is the inspect gesture, not a request to
+        // dismiss the panel — keep the panel open so the toggle stays reachable.
+        if (this._inspector?.enabled) return;
+        if (
+          this._container &&
+          this._panel &&
+          !this._container.contains(target) &&
+          !this._panel.contains(target)
+        ) {
+          this.collapse();
+        }
+      };
+      document.addEventListener('click', this._clickOutsideHandler);
+    }
 
     // Update panel position on window resize
     this._resizeHandler = () => {
