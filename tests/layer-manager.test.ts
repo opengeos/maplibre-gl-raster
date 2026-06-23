@@ -10,9 +10,10 @@ import {
 import { toLayerInfo } from '../src/lib/state/RasterLayer';
 import type { AutoStats } from '../src/lib/raster/stats';
 
-function makeFakeTiff(count = 3): GeoTIFF {
+function makeFakeTiff(count = 3, isTiled = true): GeoTIFF {
   return {
     count,
+    isTiled,
     image: { value: () => undefined },
   } as unknown as GeoTIFF;
 }
@@ -49,6 +50,7 @@ function makeFakeStats(): AutoStats {
 function makeHarness(opts?: {
   bandCount?: number;
   failLoad?: boolean;
+  notTiled?: boolean;
   epsgResolver?: LayerManagerDeps['epsgResolver'];
   engine?: 'maplibre-gl-raster' | 'cog-tiler-wasm';
 }) {
@@ -76,7 +78,7 @@ function makeHarness(opts?: {
   const deps: Partial<LayerManagerDeps> = {
     loadGeoTIFF: vi.fn(async (url: string) => {
       if (opts?.failLoad) throw new Error(`load failed: ${url}`);
-      return makeFakeTiff(opts?.bandCount ?? 3);
+      return makeFakeTiff(opts?.bandCount ?? 3, !opts?.notTiled);
     }),
     computeAutoStats: vi.fn(async () => makeFakeStats()),
     createOverlay: vi.fn(() => overlay),
@@ -209,6 +211,22 @@ describe('LayerManager.addRaster', () => {
     expect(layer.error).toBeInstanceOf(Error);
     expect(layer.loading).toBe(false);
     expect(events.some((e) => e.type === 'error')).toBe(true);
+  });
+
+  it('rejects a striped (non-tiled) GeoTIFF with an actionable error', async () => {
+    const { manager, events, setProps } = makeHarness({ notTiled: true });
+    await expect(
+      manager.addRaster('https://example.com/striped.tif'),
+    ).rejects.toThrow(/striped, not tiled/);
+    const layer = manager.getLayers()[0];
+    expect(layer.error).toBeInstanceOf(Error);
+    expect(layer.error?.message).toMatch(/Cloud-Optimized GeoTIFF/);
+    expect(layer.loading).toBe(false);
+    // The tiff is never attached, so neither engine tries to render it.
+    expect(layer.geotiff).toBeNull();
+    expect(events.some((e) => e.type === 'error')).toBe(true);
+    const lastCall = setProps.mock.calls.at(-1)?.[0];
+    if (lastCall) expect(lastCall.layers).toHaveLength(0);
   });
 
   it('accepts a local File and creates a blob source', async () => {
