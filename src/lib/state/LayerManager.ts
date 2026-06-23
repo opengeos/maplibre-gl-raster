@@ -369,6 +369,22 @@ export class LayerManager {
     try {
       const tiff = await this._deps.loadGeoTIFF(url);
       if (this._destroyed || !this.getLayer(layer.id)) return layer.id;
+      // Both rendering engines stream tiles on demand, so the source must be a
+      // tiled Cloud-Optimized GeoTIFF. A striped GeoTIFF (common for files
+      // exported from desktop GIS) has no tile grid: the deck.gl path throws
+      // 'Tiff is not tiled' deep inside an un-awaited parse step, which surfaces
+      // only as a console error while the layer renders blank with a default
+      // [0, 1] rescale window. Detect it up front and fail the layer with an
+      // actionable message instead. See opengeos/GeoLibre#789.
+      if (!tiff.isTiled) {
+        throw new Error(
+          'This GeoTIFF is striped, not tiled, so it cannot be streamed as ' +
+            'map tiles. Convert it to a tiled Cloud-Optimized GeoTIFF (COG) ' +
+            'first, for example with `rio cogeo create input.tif output.tif` ' +
+            'or `gdal_translate input.tif output.tif -of COG`, then load the ' +
+            'result.',
+        );
+      }
       layer.geotiff = tiff;
       layer.bandCount = tiff.count;
       layer.bandNames = readBandNames(tiff);
