@@ -2,10 +2,11 @@ import type { RasterSampleDataset } from '../core/types';
 import { el } from './dom';
 
 export type AddDataSectionOptions = {
-  /** Prefills the URL input (not loaded until the user clicks Load). */
+  /** Prefills the URL input. */
   initialUrl?: string;
-  /** Sample datasets offered as a "Load sample data" dropdown above the URL
-   * input; picking one fills the input. Omit/empty to hide the dropdown. */
+  /** Sample datasets offered as a "Load sample data" dropdown below the direct
+   * URL/file inputs; picking one loads it immediately. Omit/empty to hide the
+   * dropdown. */
   sampleData?: RasterSampleDataset[];
   /** Placeholder for the sample-data dropdown. */
   sampleDataLabel?: string;
@@ -129,6 +130,7 @@ export class AddDataSection {
           trigger.focus();
           input.value = sample.url;
           loadBtn.disabled = input.value.trim().length === 0;
+          submitUrl();
         });
         menu.appendChild(option);
       }
@@ -195,10 +197,10 @@ export class AddDataSection {
       'div',
       { className: 'mlr-section mlr-add-data' },
       el('div', { className: 'mlr-section-title', text: 'Add data' }),
-      ...(sampleRow ? [sampleRow] : []),
       urlRow,
       dropZone,
       beforeIdInput,
+      ...(sampleRow ? [sampleRow] : []),
     );
   }
 }

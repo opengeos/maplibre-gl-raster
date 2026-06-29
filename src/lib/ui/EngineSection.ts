@@ -22,6 +22,7 @@ export class EngineSection {
   /** Root element to insert into the panel. */
   readonly el: HTMLElement;
   private _select: HTMLSelectElement;
+  private _help: HTMLElement;
 
   constructor(options: EngineSectionOptions) {
     this._select = select(
@@ -36,12 +37,34 @@ export class EngineSection {
     const title = el('span', {
       className: 'mlr-section-title',
       text: 'Rendering engine',
-      title: HELP,
     });
+    const helpButton = el('button', {
+      className: 'mlr-info-button',
+      type: 'button',
+      text: 'i',
+      title: HELP,
+      ariaLabel: 'Rendering engine help',
+      attrs: { 'aria-expanded': 'false' },
+    });
+    this._help = el('div', {
+      className: 'mlr-tooltip',
+      text: HELP,
+      attrs: { role: 'tooltip' },
+    });
+    this._help.hidden = true;
+    const setHelpOpen = (open: boolean): void => {
+      this._help.hidden = !open;
+      helpButton.setAttribute('aria-expanded', String(open));
+    };
+    helpButton.addEventListener('click', () =>
+      setHelpOpen(this._help.hidden === true),
+    );
+    helpButton.addEventListener('blur', () => setHelpOpen(false));
     this.el = el(
       'div',
       { className: 'mlr-section mlr-engine' },
-      title,
+      el('div', { className: 'mlr-section-title-row' }, title, helpButton),
+      this._help,
       this._select,
     );
   }
