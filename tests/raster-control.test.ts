@@ -65,13 +65,34 @@ describe('RasterControl rendering engine', () => {
     const map = makeFakeMap();
     map.getContainer().appendChild(control.onAdd(map));
 
-    const selector = (
-      control as unknown as { _panel?: HTMLElement }
-    )._panel!.querySelector<HTMLSelectElement>(
+    const panel = (control as unknown as { _panel?: HTMLElement })._panel!;
+    const selector = panel.querySelector<HTMLSelectElement>(
       'select[aria-label="render-engine"]',
     );
     expect(selector).not.toBeNull();
     expect(selector!.value).toBe('maplibre-gl-raster');
+    expect(
+      panel.querySelector('button[aria-label="Rendering engine help"]'),
+    ).not.toBeNull();
+
+    control.onRemove();
+  });
+
+  it('shows rendering engine help when the info button is clicked', () => {
+    const control = new RasterControl({ collapsed: false });
+    const map = makeFakeMap();
+    map.getContainer().appendChild(control.onAdd(map));
+    const panel = (control as unknown as { _panel?: HTMLElement })._panel!;
+    const helpButton = panel.querySelector<HTMLButtonElement>(
+      'button[aria-label="Rendering engine help"]',
+    )!;
+    const tooltip = panel.querySelector<HTMLElement>('.mlr-tooltip')!;
+
+    expect(tooltip.hidden).toBe(true);
+    helpButton.click();
+    expect(tooltip.hidden).toBe(false);
+    expect(tooltip.textContent).toContain('deck.gl GPU pipeline');
+    expect(helpButton.getAttribute('aria-expanded')).toBe('true');
 
     control.onRemove();
   });

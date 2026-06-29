@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { AddDataSection } from '../src/lib/ui/AddDataSection';
 
 function createSection(
-  overrides: Partial<Parameters<typeof AddDataSection.prototype.constructor>[0]> = {},
+  overrides: Partial<
+    Parameters<typeof AddDataSection.prototype.constructor>[0]
+  > = {},
 ) {
   const onAddUrl = vi.fn();
   const onAddFile = vi.fn();
@@ -31,22 +33,31 @@ describe('AddDataSection sample dropdown', () => {
     });
 
     const trigger = section.el.querySelector('.mlr-sample-trigger')!;
-    expect(trigger.querySelector('.mlr-sample-trigger-label')!.textContent).toBe(
-      'Load sample data...',
-    );
+    expect(
+      trigger.querySelector('.mlr-sample-trigger-label')!.textContent,
+    ).toBe('Load sample data...');
     const menu = section.el.querySelector<HTMLElement>('.mlr-sample-menu')!;
     expect(menu.hidden).toBe(true);
-    const options = Array.from(section.el.querySelectorAll('.mlr-sample-option'));
-    expect(options.map((o) => o.textContent)).toEqual(['Land cover', 'Elevation']);
+    const options = Array.from(
+      section.el.querySelectorAll('.mlr-sample-option'),
+    );
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Land cover',
+      'Elevation',
+    ]);
 
-    const input = section.el.querySelector<HTMLInputElement>('input[aria-label=raster-url]')!;
+    const input = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=raster-url]',
+    )!;
     expect(input.value).toBe('');
   });
 
   it('uses a custom placeholder when provided', () => {
     const { section } = createSection({
       sampleDataLabel: 'Try a COG...',
-      sampleData: [{ label: 'Land cover', url: 'https://example.com/landcover.tif' }],
+      sampleData: [
+        { label: 'Land cover', url: 'https://example.com/landcover.tif' },
+      ],
     });
     expect(
       section.el.querySelector('.mlr-sample-trigger-label')!.textContent,
@@ -55,9 +66,13 @@ describe('AddDataSection sample dropdown', () => {
 
   it('opens the menu when the trigger is clicked', () => {
     const { section } = createSection({
-      sampleData: [{ label: 'Land cover', url: 'https://example.com/landcover.tif' }],
+      sampleData: [
+        { label: 'Land cover', url: 'https://example.com/landcover.tif' },
+      ],
     });
-    const trigger = section.el.querySelector<HTMLButtonElement>('.mlr-sample-trigger')!;
+    const trigger = section.el.querySelector<HTMLButtonElement>(
+      '.mlr-sample-trigger',
+    )!;
     const menu = section.el.querySelector<HTMLElement>('.mlr-sample-menu')!;
 
     trigger.click();
@@ -68,19 +83,56 @@ describe('AddDataSection sample dropdown', () => {
     expect(menu.hidden).toBe(true);
   });
 
-  it('fills the URL input (and enables Load) when an option is picked, without loading', () => {
+  it('renders the sample dropdown after the direct URL, file, and before-id inputs', () => {
+    const { section } = createSection({
+      sampleData: [
+        { label: 'Land cover', url: 'https://example.com/landcover.tif' },
+      ],
+    });
+
+    const children = Array.from(section.el.children);
+    const sampleIndex = children.findIndex((child) =>
+      child.classList.contains('mlr-sample-row'),
+    );
+    const urlIndex = children.findIndex((child) =>
+      child.classList.contains('mlr-row'),
+    );
+    const dropIndex = children.findIndex((child) =>
+      child.classList.contains('mlr-drop-zone'),
+    );
+    const beforeIdIndex = children.findIndex(
+      (child) => child.getAttribute('aria-label') === 'before-id',
+    );
+
+    expect(urlIndex).toBeGreaterThan(-1);
+    expect(dropIndex).toBeGreaterThan(urlIndex);
+    expect(beforeIdIndex).toBeGreaterThan(dropIndex);
+    expect(sampleIndex).toBeGreaterThan(beforeIdIndex);
+  });
+
+  it('fills the URL input, enables Load, and loads when an option is picked', () => {
     const { section, onAddUrl } = createSection({
-      sampleData: [{ label: 'Land cover', url: 'https://example.com/landcover.tif' }],
+      sampleData: [
+        { label: 'Land cover', url: 'https://example.com/landcover.tif' },
+      ],
     });
     section.el.querySelector<HTMLButtonElement>('.mlr-sample-trigger')!.click();
     section.el.querySelector<HTMLButtonElement>('.mlr-sample-option')!.click();
 
-    const input = section.el.querySelector<HTMLInputElement>('input[aria-label=raster-url]')!;
-    const loadBtn = section.el.querySelector<HTMLButtonElement>('button[aria-label=load-url]')!;
+    const input = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=raster-url]',
+    )!;
+    const loadBtn = section.el.querySelector<HTMLButtonElement>(
+      'button[aria-label=load-url]',
+    )!;
     expect(input.value).toBe('https://example.com/landcover.tif');
     expect(loadBtn.disabled).toBe(false);
-    // Picking a sample only fills the input; it does not load.
-    expect(onAddUrl).not.toHaveBeenCalled();
-    expect(section.el.querySelector<HTMLElement>('.mlr-sample-menu')!.hidden).toBe(true);
+    expect(onAddUrl).toHaveBeenCalledWith(
+      'https://example.com/landcover.tif',
+      undefined,
+    );
+    expect(
+      section.el.querySelector<HTMLElement>('.mlr-sample-menu')!.hidden,
+    ).toBe(true);
   });
 });
