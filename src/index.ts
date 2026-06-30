@@ -5,6 +5,20 @@ import './lib/styles/raster-control.css';
 export { RasterControl } from './lib/core/RasterControl';
 export { Colorbar } from './lib/core/Colorbar';
 
+// Headless rendering core. `RasterControl` is a thin UI wrapper around this
+// class; consume `LayerManager` directly to drive COG rendering from your own
+// UI (add/remove/show/restyle raster layers and listen for lifecycle events)
+// without mounting the built-in panel.
+export { LayerManager, DEFAULT_ENGINE } from './lib/state/LayerManager';
+export type {
+  LayerManagerEvent,
+  LayerManagerEventData,
+  LayerManagerEventHandler,
+  LayerManagerDeps,
+  OverlayLike,
+} from './lib/state/LayerManager';
+export type { RasterLayer } from './lib/state/RasterLayer';
+
 // Raster utilities for advanced use
 export { loadGeoTIFF } from './lib/raster/load-geotiff';
 export {
