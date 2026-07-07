@@ -345,12 +345,16 @@ export class CogTilerEngine {
    * is intentionally excluded (applied as a paint property instead). */
   private _renderOptionsFor(layer: CogEngineLayer): RenderOptions {
     const s = layer.state;
-    const bidx =
-      s.mode === 'single'
-        ? [s.bands[0] ?? 1]
-        : s.bands.slice(0, 3).map((b) => b || 1);
+    // cog-tiler-wasm has no band-math endpoint, so index mode can't compute
+    // (A - B) / (A + B) here. Degrade to a colormapped view of operand A —
+    // the default 'maplibre-gl-raster' engine renders the real index. The
+    // panel notes this limitation when the CPU engine is active.
+    const colormapped = s.mode === 'single' || s.mode === 'index';
+    const bidx = colormapped
+      ? [s.bands[0] ?? 1]
+      : s.bands.slice(0, 3).map((b) => b || 1);
     const opts: RenderOptions = { bidx, stretch: s.stretch, gamma: s.gamma };
-    if (s.mode === 'single') {
+    if (colormapped) {
       opts.reversed = s.reversed;
       // The embedded palette renders categorically; cog-tiler picks it up from
       // the COG, so leave colormap unset in that case.

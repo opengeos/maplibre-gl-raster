@@ -26,7 +26,19 @@ export {
   loadColormapSprite,
   sampleColormapStops,
 } from './lib/raster/colormap-sampler';
-export { autoRangeFor, statsForBand } from './lib/raster/render-pipeline';
+export {
+  autoRangeFor,
+  DEFAULT_INDEX_RANGE,
+  statsForBand,
+} from './lib/raster/render-pipeline';
+export {
+  CUSTOM_INDEX_ID,
+  CUSTOM_NORMALIZED_DIFFERENCE,
+  guessBandForRole,
+  indexById,
+  NORMALIZED_DIFFERENCE_INDICES,
+} from './lib/raster/indices';
+export type { NormalizedDifferenceIndex } from './lib/raster/indices';
 export { readPixelValues } from './lib/raster/inspect';
 export { createResilientEpsgResolver } from './lib/raster/epsg-resolver';
 export { summarizeGeoTIFF } from './lib/raster/metadata';

@@ -225,3 +225,112 @@ describe('SettingsSection band options', () => {
     }
   });
 });
+
+describe('SettingsSection index mode', () => {
+  function loadedLayer(
+    bandCount: number,
+    overrides: Partial<RasterLayerState> = {},
+    bandNames: Map<number, string> | null = null,
+  ): RasterLayer {
+    return {
+      name: 'ms.tif',
+      loading: false,
+      error: null,
+      bandCount,
+      bandNames,
+      palette: null,
+      autoStats: null,
+      state: createLayerState({ mode: 'single', bands: [1], ...overrides }),
+    } as RasterLayer;
+  }
+
+  const findModeSelect = (section: SettingsSection) =>
+    section.el.querySelector<HTMLSelectElement>('[aria-label="mode"]')!;
+
+  it('switching Mode to Index emits an index patch with two bands', () => {
+    const patches: Partial<RasterLayerState>[] = [];
+    const layer = loadedLayer(8);
+    const section = new SettingsSection(() => layer, (p) => {
+      Object.assign(layer.state, p);
+      patches.push(p);
+    });
+    section.render();
+    const mode = findModeSelect(section);
+    mode.value = 'index';
+    mode.dispatchEvent(new Event('change'));
+    const patch = patches.find((p) => p.mode === 'index')!;
+    expect(patch).toBeTruthy();
+    expect(patch.index).toBe('ndvi');
+    expect(patch.bands).toHaveLength(2);
+    expect(patch.colormap).toBe('rdylgn');
+    expect(patch.rescale).toBeNull();
+  });
+
+  it('renders the preset selector and two operand pickers in index mode', () => {
+    const layer = loadedLayer(8, { mode: 'index', index: 'ndvi', bands: [4, 3] });
+    const section = new SettingsSection(() => layer, () => {});
+    section.render();
+    expect(
+      section.el.querySelector('[aria-label="index-preset"]'),
+    ).not.toBeNull();
+    expect(section.el.querySelector('[aria-label="index-band-a"]')).not.toBeNull();
+    expect(section.el.querySelector('[aria-label="index-band-b"]')).not.toBeNull();
+    // No RGB channel pickers.
+    expect(section.el.querySelector('[aria-label="band-r"]')).toBeNull();
+  });
+
+  it('changing the preset re-seeds colormap and index id', () => {
+    const patches: Partial<RasterLayerState>[] = [];
+    const layer = loadedLayer(8, { mode: 'index', index: 'ndvi', bands: [4, 3] });
+    const section = new SettingsSection(() => layer, (p) => {
+      Object.assign(layer.state, p);
+      patches.push(p);
+    });
+    section.render();
+    const preset = section.el.querySelector<HTMLSelectElement>(
+      '[aria-label="index-preset"]',
+    )!;
+    preset.value = 'ndwi';
+    preset.dispatchEvent(new Event('change'));
+    const patch = patches.at(-1)!;
+    expect(patch.index).toBe('ndwi');
+    expect(patch.colormap).toBe('blues');
+  });
+
+  it('editing an operand patches that band slot only', () => {
+    const patches: Partial<RasterLayerState>[] = [];
+    const layer = loadedLayer(8, { mode: 'index', index: 'ndvi', bands: [4, 3] });
+    const section = new SettingsSection(() => layer, (p) => {
+      Object.assign(layer.state, p);
+      patches.push(p);
+    });
+    section.render();
+    const bandB = section.el.querySelector<HTMLSelectElement>(
+      '[aria-label="index-band-b"]',
+    )!;
+    bandB.value = '2';
+    bandB.dispatchEvent(new Event('change'));
+    expect(patches.at(-1)!.bands).toEqual([4, 2]);
+  });
+
+  it('guesses operand bands from GDAL band names', () => {
+    const patches: Partial<RasterLayerState>[] = [];
+    const names = new Map<number, string>([
+      [1, 'Blue'],
+      [2, 'Green'],
+      [3, 'Red'],
+      [4, 'NIR'],
+    ]);
+    const layer = loadedLayer(4, {}, names);
+    const section = new SettingsSection(() => layer, (p) => {
+      Object.assign(layer.state, p);
+      patches.push(p);
+    });
+    section.render();
+    const mode = findModeSelect(section);
+    mode.value = 'index';
+    mode.dispatchEvent(new Event('change'));
+    // NDVI = (NIR - Red) / (NIR + Red) → [4, 3].
+    expect(patches.find((p) => p.mode === 'index')!.bands).toEqual([4, 3]);
+  });
+});

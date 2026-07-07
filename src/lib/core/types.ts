@@ -2,9 +2,10 @@ import type { EpsgResolver } from '@developmentseed/proj';
 import type { ControlPosition, Map } from 'maplibre-gl';
 import type { ColorbarOrientation } from './Colorbar';
 
-/** Rendering mode: RGB composite (one band per channel) or single band
- * through a colormap. */
-export type RasterMode = 'rgb' | 'single';
+/** Rendering mode: RGB composite (one band per channel), a single band
+ * through a colormap, or a normalized-difference index of two bands through a
+ * colormap. */
+export type RasterMode = 'rgb' | 'single' | 'index';
 
 /**
  * Which backend renders the raster layers:
@@ -56,8 +57,13 @@ export type RasterNodata = number | 'off' | 'auto';
 export interface RasterLayerState {
   /** Rendering mode. */
   mode: RasterMode;
-  /** 1-indexed band selection: [r, g, b] in RGB mode, [band] in single mode. */
+  /** 1-indexed band selection: [r, g, b] in RGB mode, [band] in single mode,
+   * [A, B] in index mode (the operands of `(A - B) / (A + B)`). */
   bands: number[];
+  /** Selected normalized-difference index preset id (index mode only), e.g.
+   * `'ndvi'` or `'custom'`. See `NORMALIZED_DIFFERENCE_INDICES`. Ignored in
+   * other modes. */
+  index?: string;
   /** Per-channel [min, max] rescale windows; null = auto (2-98% percentile
    * from computed stats). */
   rescale: [number, number][] | null;

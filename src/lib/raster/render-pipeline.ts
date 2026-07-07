@@ -20,6 +20,7 @@ import {
   FilterNaN,
   Gamma,
   LogStretch,
+  NormalizedDifference,
   PerBandLinearRescale,
   SqrtStretch,
 } from './shader-modules';
@@ -181,6 +182,36 @@ function pickMapping(
   return mapping;
 }
 
+/** Push the nodata-discard modules for a tile, in the correct order. Filters
+ * nodata BEFORE any rescale / gamma / colormap so the comparison happens
+ * against the texture's native sample value. NaN nodata uses the custom
+ * isnan() shader; everything else uses FilterNoDataVal with the value
+ * normalized into the GPU's sample space (uint8 255 → 1.0 for r8unorm). Also
+ * applies implicit NaN-as-nodata for float COGs — IEEE-754 NaN is invalid by
+ * definition, and GDAL/QGIS treat it as transparent even when the file
+ * declares no GDAL_NODATA tag (e.g. Sentinel-2 derivatives that mask
+ * outside-swath pixels with NaN). Gated on float textures via sampleScale
+ * (r8unorm uint8 textures can't carry NaN), and skipped when the user
+ * explicitly set nodata to "off" or when FilterNaN is already in the pipeline
+ * (state.nodata was numerically NaN). */
+function pushNodataFilters(
+  state: RasterLayerState,
+  data: MultiBandTileData,
+  pipeline: RasterModule[],
+): void {
+  const nodata = effectiveNodata(state, data.nodata);
+  let explicitNodataModule: RasterModule | null = null;
+  if (nodata !== null) {
+    explicitNodataModule = nodataModule(nodata, data.sampleScale);
+    if (explicitNodataModule) pipeline.push(explicitNodataModule);
+  }
+  const isFloatTexture = data.sampleScale === 1;
+  const filterNaNAlreadyPushed = explicitNodataModule?.module === FilterNaN;
+  if (isFloatTexture && state.nodata !== 'off' && !filterNaNAlreadyPushed) {
+    pipeline.push({ module: FilterNaN });
+  }
+}
+
 /** Shared renderTile builder. Handles both RGB and single-band paths
  * via a discriminated `mode`. The two paths differ only in: (a) which
  * bands feed CompositeBands, (b) whether a Colormap module is appended
@@ -205,30 +236,7 @@ function buildRenderTile(
       { module: CompositeBands, props: compositeProps },
     ];
 
-    // Filter nodata BEFORE any rescale / gamma / colormap so the comparison
-    // happens against the texture's native sample value. NaN nodata uses the
-    // custom isnan() shader; everything else uses FilterNoDataVal with the
-    // value normalized into the GPU's sample space (uint8 255 → 1.0 for
-    // r8unorm).
-    const nodata = effectiveNodata(state, data.nodata);
-    let explicitNodataModule: RasterModule | null = null;
-    if (nodata !== null) {
-      explicitNodataModule = nodataModule(nodata, data.sampleScale);
-      if (explicitNodataModule) pipeline.push(explicitNodataModule);
-    }
-
-    // Implicit NaN-as-nodata for float COGs. IEEE-754 NaN is invalid by
-    // definition, and GDAL/QGIS treat it as transparent even when the file
-    // declares no GDAL_NODATA tag (e.g. Sentinel-2 derivatives that mask
-    // outside-swath pixels with NaN). Gated on float textures via sampleScale
-    // (r8unorm uint8 textures can't carry NaN), and skipped when the user
-    // explicitly set nodata to "off" or when FilterNaN is already in the
-    // pipeline (state.nodata was numerically NaN).
-    const isFloatTexture = data.sampleScale === 1;
-    const filterNaNAlreadyPushed = explicitNodataModule?.module === FilterNaN;
-    if (isFloatTexture && state.nodata !== 'off' && !filterNaNAlreadyPushed) {
-      pipeline.push({ module: FilterNaN });
-    }
+    pushNodataFilters(state, data, pipeline);
 
     if (mode.kind === 'palette') {
       // Palette indices are categorical: skip the user rescale / stretch /
@@ -331,4 +339,66 @@ export function buildPaletteCompositeRenderTile(
     kind: 'palette',
     colormapTexture: paletteTexture,
   });
+}
+
+/** Default rescale window for a normalized-difference index: the full [-1, 1]
+ * range the formula can produce. Used when `state.rescale` is unset. */
+export const DEFAULT_INDEX_RANGE: Range = [-1, 1];
+
+/** Index renderTile: computes a normalized difference `(A - B) / (A + B)` of
+ * two bands on the GPU, then colormaps the [-1, 1] result. `CompositeBands`
+ * loads band A into the red channel and band B into green; the
+ * `NormalizedDifference` module collapses them to a single value broadcast
+ * across RGB; `PerBandLinearRescale` maps the chosen window (default
+ * {@link DEFAULT_INDEX_RANGE}) into [0, 1] for the colormap. The index is
+ * scale-invariant, so — unlike the single/RGB paths — the rescale window is
+ * NOT divided by `data.sampleScale`. Re-renders without a re-fetch when the
+ * colormap / rescale change (within the cached band set). */
+export function buildIndexCompositeRenderTile(
+  state: RasterLayerState,
+  colormapTexture: Texture,
+) {
+  const name = (state.colormap ?? 'rdylgn').toLowerCase();
+  const colormapIndex =
+    (COLORMAP_INDEX as Record<string, number>)[name] ?? COLORMAP_INDEX.rdylgn;
+  return function renderTile(data: MultiBandTileData): RenderTileResult {
+    if (data.bands.size === 0) return { renderPipeline: [] };
+    const bandA = pickBand(data, state.bands?.[0] ?? 1);
+    if (!bandA) return { renderPipeline: [] };
+    // Fall back to band A when B wasn't fetched — yields a flat 0 index rather
+    // than an empty tile, which reads as "same band" to the user.
+    const bandB = pickBand(data, state.bands?.[1] ?? 2) ?? bandA;
+    const compositeProps = buildCompositeBandsProps(
+      { r: bandA, g: bandB },
+      data.bands,
+    );
+    const pipeline: RasterModule[] = [
+      { module: CompositeBands, props: compositeProps },
+    ];
+
+    // Discard nodata against the raw band values, before the index collapses
+    // them (a masked pixel in either operand should not colour the output).
+    pushNodataFilters(state, data, pipeline);
+
+    pipeline.push({ module: NormalizedDifference });
+
+    const [lo, hi] = safeRange(state.rescale?.[0] ?? DEFAULT_INDEX_RANGE);
+    pipeline.push({
+      module: PerBandLinearRescale,
+      props: { rescaleMin: [lo, lo, lo], rescaleMax: [hi, hi, hi] },
+    });
+
+    pushAdjustments(state, pipeline);
+
+    pipeline.push({
+      module: Colormap,
+      props: {
+        colormapTexture,
+        colormapIndex,
+        reversed: state.reversed ?? false,
+      },
+    });
+
+    return { renderPipeline: pipeline };
+  };
 }
