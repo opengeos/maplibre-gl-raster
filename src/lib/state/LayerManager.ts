@@ -17,6 +17,7 @@ import { colormapsPngUrl } from '../raster/colormaps';
 import { createResilientEpsgResolver } from '../raster/epsg-resolver';
 import { loadGeoTIFF as defaultLoadGeoTIFF } from '../raster/load-geotiff';
 import {
+  buildIndexCompositeRenderTile,
   buildPaletteCompositeRenderTile,
   buildRgbCompositeRenderTile,
   buildSingleCompositeRenderTile,
@@ -69,7 +70,10 @@ function fetchBandsFor(layer: RasterLayer): number[] {
   const sampled =
     layer.state.mode === 'rgb'
       ? (bands && bands.length > 0 ? bands : [1, 2, 3]).slice(0, 3)
-      : [bands?.[0] ?? 1];
+      : layer.state.mode === 'index'
+        ? // Index mode needs both operands of (A - B) / (A + B).
+          (bands && bands.length > 0 ? bands : [1, 2]).slice(0, 2)
+        : [bands?.[0] ?? 1];
   const unique = [
     ...new Set(sampled.filter((b) => Number.isInteger(b) && b >= 1)),
   ].sort((a, b) => a - b);
@@ -871,6 +875,11 @@ export class LayerManager {
           layer.autoStats,
         );
       }
+    }
+    // Index mode needs the shared colormap texture; until it's ready the RGB
+    // fallback below draws the raw bands.
+    if (layer.state.mode === 'index' && this._colormapTexture) {
+      return buildIndexCompositeRenderTile(layer.state, this._colormapTexture);
     }
     return buildRgbCompositeRenderTile(layer.state, layer.autoStats);
   }

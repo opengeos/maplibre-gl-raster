@@ -8,8 +8,16 @@ import type {
 } from '../core/types';
 import {
   autoRangeFor,
+  DEFAULT_INDEX_RANGE,
   statsForBand,
 } from '../raster/render-pipeline';
+import {
+  CUSTOM_NORMALIZED_DIFFERENCE,
+  guessBandForRole,
+  indexById,
+  NORMALIZED_DIFFERENCE_INDICES,
+  type NormalizedDifferenceIndex,
+} from '../raster/indices';
 import type { AutoStats, BandStats } from '../raster/stats';
 import type { RasterLayer } from '../state/RasterLayer';
 import { BandHistogram } from './BandHistogram';
@@ -23,10 +31,14 @@ const RGB_CHANNELS = [
 ] as const;
 
 const HELP = {
-  mode: 'RGB / composite picks one band per output channel for true- or false-color images. Single band sends one band through a colormap.',
+  mode: 'RGB / composite picks one band per output channel for true- or false-color images. Single band sends one band through a colormap. Index computes a normalized-difference index of two bands.',
   bandsRgb:
     'Pick which band feeds each output channel. Native order is usually 1=red, 2=green, 3=blue; reorder to make false-color composites.',
   bandSingle: "Which band's pixel values feed the colormap.",
+  index:
+    'Compute a normalized-difference index (A - B) / (A + B) of two bands, then color the [-1, 1] result. Pick a preset (e.g. NDVI) or Custom.',
+  indexBands:
+    "Assign each operand of the index to a band. Presets name a role (e.g. NIR, Red); the initial guess uses the file's band names when present.",
   rescale:
     'Maps a window of source values to the colormap input. Drag the histogram handles, type values, or pick a preset.',
   colormap:
@@ -314,17 +326,29 @@ export class SettingsSection {
       layer.palette !== null;
 
     this._body.appendChild(this._buildModeField(state, mode, bandOptions));
-    this._body.appendChild(
-      this._buildBandsField(layer, state, mode, bandOptions),
-    );
+    // Index mode has its own preset + operand pickers; other modes get the
+    // standard band selector.
+    if (mode === 'index') {
+      this._body.appendChild(this._buildIndexField(layer, state, bandOptions));
+    } else {
+      this._body.appendChild(
+        this._buildBandsField(layer, state, mode, bandOptions),
+      );
+    }
     if (!paletteActive) {
       this._body.appendChild(this._buildRescaleField(layer, state, mode));
     }
-    if (mode === 'single') {
+    // A colormap applies to single-band and index modes (index colors its
+    // [-1, 1] result). The embedded palette is only offered for single-band
+    // (index has no categorical output).
+    if (mode === 'single' || mode === 'index') {
       const picker = new ColormapPicker({
         value: state.colormap,
-        palette: layer.palette,
-        stats: statsForBand(layer.autoStats, state.bands[0] ?? 1),
+        palette: mode === 'single' ? layer.palette : null,
+        stats:
+          mode === 'single'
+            ? statsForBand(layer.autoStats, state.bands[0] ?? 1)
+            : null,
         onChange: (name) => {
           this._setState({ colormap: name });
           // Switching to/from the palette shows/hides rescale-curve-gamma.
@@ -362,19 +386,48 @@ export class SettingsSection {
       [
         { value: 'rgb', label: 'RGB / composite' },
         { value: 'single', label: 'Single band + colormap' },
+        { value: 'index', label: 'Index (normalized difference)' },
       ],
       mode,
       (next) => {
-        this._setState({
-          mode: next as RasterMode,
-          bands: next === 'single' ? [state.bands[0] ?? 1] : rgbDefault,
-          rescale: null,
-        });
+        if (next === 'index') {
+          // Seed the last-used preset (or NDVI) with role-guessed bands.
+          this._setState(this._indexPatchFor(indexById(state.index)));
+        } else {
+          this._setState({
+            mode: next as RasterMode,
+            bands: next === 'single' ? [state.bands[0] ?? 1] : rgbDefault,
+            rescale: null,
+          });
+        }
         this.render();
       },
       'mode',
     );
     return field('Mode', modeSelect, HELP.mode);
+  }
+
+  /** Builds the state patch for entering / switching an index preset: assigns
+   * each operand a band (guessed from band names, else 1 and 2), applies the
+   * preset's default colormap, and resets rescale to the [-1, 1] auto range. */
+  private _indexPatchFor(
+    preset: NormalizedDifferenceIndex | null,
+  ): Partial<RasterLayerState> {
+    const index = preset ?? NORMALIZED_DIFFERENCE_INDICES[0];
+    const layer = this._getLayer();
+    const bandCount = Math.max(1, layer?.bandCount ?? 1);
+    const names = layer?.bandNames ?? null;
+    const clamp = (b: number) => Math.min(Math.max(1, b), bandCount);
+    const a = clamp(guessBandForRole(index.roleA, names) ?? 1);
+    const b = clamp(guessBandForRole(index.roleB, names) ?? (a === 2 ? 1 : 2));
+    return {
+      mode: 'index',
+      index: index.id,
+      bands: [a, b],
+      colormap: index.colormap,
+      reversed: false,
+      rescale: null,
+    };
   }
 
   private _buildBandsField(
@@ -418,18 +471,78 @@ export class SettingsSection {
     return field('Bands (R, G, B)', row, HELP.bandsRgb);
   }
 
+  /** Index mode UI: a preset selector plus a band picker for each operand of
+   * `(A - B) / (A + B)`, labelled with the preset's roles (e.g. NIR / Red). */
+  private _buildIndexField(
+    layer: RasterLayer,
+    state: RasterLayerState,
+    bandOptions: number[],
+  ): HTMLElement {
+    const preset = indexById(state.index) ?? NORMALIZED_DIFFERENCE_INDICES[0];
+    const wrap = el('div');
+
+    const presetOptions = [
+      ...NORMALIZED_DIFFERENCE_INDICES.map((i) => ({
+        value: i.id,
+        label: i.label,
+      })),
+      { value: CUSTOM_NORMALIZED_DIFFERENCE.id, label: CUSTOM_NORMALIZED_DIFFERENCE.label },
+    ];
+    const presetSelect = select(
+      presetOptions,
+      preset.id,
+      (next) => {
+        this._setState(this._indexPatchFor(indexById(next)));
+        this.render();
+      },
+      'index-preset',
+    );
+    wrap.appendChild(field('Index', presetSelect, preset.name));
+
+    const bandChoices = bandOptions.map((n) => ({
+      value: String(n),
+      label: bandLabel(n, layer.bandNames),
+    }));
+    const operandSelect = (slot: 0 | 1, ariaLabel: string) =>
+      select(
+        bandChoices,
+        String(state.bands[slot] ?? (slot === 0 ? 1 : 2)),
+        (next) => {
+          const bands = [state.bands[0] ?? 1, state.bands[1] ?? 2];
+          bands[slot] = Number(next);
+          this._setState({ bands });
+          this.render();
+        },
+        ariaLabel,
+      );
+    const grid = el(
+      'div',
+      { className: 'mlr-band-grid' },
+      operandSelect(0, 'index-band-a'),
+      operandSelect(1, 'index-band-b'),
+    );
+    wrap.appendChild(
+      field(`Bands (${preset.roleA}, ${preset.roleB})`, grid, HELP.indexBands),
+    );
+    return wrap;
+  }
+
   private _buildRescaleField(
     layer: RasterLayer,
     state: RasterLayerState,
     mode: RasterMode,
   ): HTMLElement {
     const autoStats: AutoStats | null = layer.autoStats;
-    const channelCount = mode === 'single' ? 1 : 3;
+    const channelCount = mode === 'rgb' ? 3 : 1;
     const bands = state.bands;
 
+    // Index mode has no per-band histogram (the value is a computed
+    // difference), so it shows a single [-1, 1] range with numeric inputs
+    // only. The default fills from DEFAULT_INDEX_RANGE rather than band stats.
+    const isIndex = mode === 'index';
     const perBandStats: (BandStats | null)[] = Array.from(
       { length: channelCount },
-      (_, i) => statsForBand(autoStats, bands[i] ?? bands[0] ?? 1),
+      (_, i) => (isIndex ? null : statsForBand(autoStats, bands[i] ?? bands[0] ?? 1)),
     );
     const perBandPercentile: ([number, number] | null)[] = perBandStats.map(
       (s) => (s ? autoRangeFor(s) : null),
@@ -437,9 +550,12 @@ export class SettingsSection {
     const perBandMinMax: ([number, number] | null)[] = perBandStats.map((s) =>
       s ? [s.min, s.max] : null,
     );
+    const defaultRange: [number, number] = isIndex
+      ? [DEFAULT_INDEX_RANGE[0], DEFAULT_INDEX_RANGE[1]]
+      : [0, 1];
     const values: [number, number][] = Array.from(
       { length: channelCount },
-      (_, i) => state.rescale?.[i] ?? perBandPercentile[i] ?? [0, 1],
+      (_, i) => state.rescale?.[i] ?? perBandPercentile[i] ?? defaultRange,
     );
 
     const setChannel = (i: number, next: [number, number]) => {
@@ -454,14 +570,13 @@ export class SettingsSection {
     const wrap = el('div', { className: 'mlr-rescale' });
     const rows: RescaleRow[] = [];
     for (let i = 0; i < channelCount; i++) {
-      const channel = mode === 'single' ? null : RGB_CHANNELS[i];
+      const channel = mode === 'rgb' ? RGB_CHANNELS[i] : null;
       const row = new RescaleRow({
         color: channel?.color ?? 'var(--mlr-histogram-neutral)',
         label: channel?.label,
-        ariaPrefix:
-          mode === 'single'
-            ? 'rescale'
-            : `rescale-${channel!.label.toLowerCase()}`,
+        ariaPrefix: channel
+          ? `rescale-${channel.label.toLowerCase()}`
+          : 'rescale',
         onChange: (next) => setChannel(i, next),
         onDragStart: () => {
           this._dragCount++;

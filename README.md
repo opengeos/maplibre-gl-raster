@@ -190,9 +190,10 @@ Per-layer visualization state, editable via the panel or `setRasterState`:
 
 ```typescript
 interface RasterLayerState {
-  mode: "rgb" | "single"; // RGB composite or single band + colormap
-  bands: number[]; // 1-indexed band selection
-  rescale: [number, number][] | null; // per-channel min/max; null = auto (2-98%)
+  mode: "rgb" | "single" | "index"; // RGB composite, single band + colormap, or normalized-difference index
+  bands: number[]; // 1-indexed band selection ([A, B] in index mode)
+  index?: string; // normalized-difference preset id (index mode), e.g. "ndvi"
+  rescale: [number, number][] | null; // per-channel min/max; null = auto (2-98%, or [-1, 1] for index)
   colormap: string; // colormap name; "palette" = embedded color table
   reversed: boolean; // sample the named colormap back-to-front
   nodata: number | "off" | "auto"; // nodata handling
@@ -212,6 +213,8 @@ interface RasterLayerState {
 ```
 
 When a raster loads, the mode and bands are picked automatically (3+ bands → RGB `[1, 2, 3]`; otherwise single-band), and the rescale range defaults to the 2-98% percentile of sampled statistics. Single-band rasters use the image's embedded color table when it carries one (`colormap: "palette"`) and grayscale otherwise. The first four bands are fetched as GPU textures, so band combinations among them re-render instantly without re-downloading tiles.
+
+**Index mode** computes a normalized-difference index `(A - B) / (A + B)` of two bands entirely on the GPU (no server or download), then colors the `[-1, 1]` result with a colormap. Presets (`NORMALIZED_DIFFERENCE_INDICES`) pre-fill the band roles and a default ramp for NDVI, NDWI, NDMI, NBR, NDBI, and NDSI, and a "Custom" option lets you pick any two bands; the settings panel seeds the operand bands from the file's band names when present. Index mode requires the default `maplibre-gl-raster` engine (the `cog-tiler-wasm` engine has no band-math endpoint and falls back to a colormapped view of the first operand).
 
 ### RasterControlReact
 

@@ -29,6 +29,29 @@ export const FilterNaN = {
   },
 } as const;
 
+/** Normalized-difference index: replaces the color with `(A - B) / (A + B)`
+ * broadcast across RGB, where `A` is the red channel and `B` the green channel
+ * populated by a preceding `CompositeBands` (r → band A, g → band B). The
+ * result lies in [-1, 1] and is scale-invariant, so it can run on the raw
+ * sampled band values regardless of the texture's sample scale — a downstream
+ * `PerBandLinearRescale` maps the chosen window (default [-1, 1]) into [0, 1]
+ * for the colormap. A zero denominator yields 0 rather than a NaN/Inf. Runs
+ * before rescale / gamma / colormap. */
+export const NormalizedDifference = {
+  name: 'normalizedDifference',
+  inject: {
+    'fs:DECKGL_FILTER_COLOR': `
+  {
+    float ndA = color.r;
+    float ndB = color.g;
+    float ndDenom = ndA + ndB;
+    float nd = abs(ndDenom) < 1e-12 ? 0.0 : (ndA - ndB) / ndDenom;
+    color.rgb = vec3(nd);
+  }
+`,
+  },
+} as const;
+
 /** Per-channel `LinearRescale`. Same idea as the shipped `LinearRescale`,
  * but min/max are vec3 so each band gets its own range. */
 export const PerBandLinearRescale = {

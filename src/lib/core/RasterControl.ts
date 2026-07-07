@@ -513,13 +513,14 @@ export class RasterControl implements IControl {
     const seen = new Set<string>();
     for (const layer of manager.getLayers()) {
       const cb = layer.state.colorbar;
-      // A legend only makes sense for a visible single-band named colormap
-      // (palette entries are categorical, with no numeric range to label).
+      // A legend only makes sense for a visible colormapped layer with a
+      // continuous range: single-band named colormaps (palette entries are
+      // categorical, with no numeric range to label) or index mode.
       if (
         !cb?.visible ||
         !layer.state.visible ||
-        layer.state.mode !== 'single' ||
-        layer.state.colormap === 'palette'
+        (layer.state.mode !== 'single' && layer.state.mode !== 'index') ||
+        (layer.state.mode === 'single' && layer.state.colormap === 'palette')
       ) {
         continue;
       }
@@ -555,8 +556,14 @@ export class RasterControl implements IControl {
   private _colorbarOptionsFor(layer: RasterLayer): ColorbarOptions {
     const band = layer.state.bands[0] ?? 1;
     const stats = statsForBand(layer.autoStats, band);
-    const range: [number, number] =
-      layer.state.rescale?.[0] ?? (stats ? autoRangeFor(stats) : [0, 1]);
+    // Index mode has a fixed [-1, 1] range, not a per-band histogram range.
+    const autoRange: [number, number] =
+      layer.state.mode === 'index'
+        ? [-1, 1]
+        : stats
+          ? autoRangeFor(stats)
+          : [0, 1];
+    const range: [number, number] = layer.state.rescale?.[0] ?? autoRange;
     const cb = layer.state.colorbar;
     return {
       colormap: layer.state.colormap,
