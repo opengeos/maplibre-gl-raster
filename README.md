@@ -14,6 +14,7 @@ A MapLibre GL JS plugin for visualizing local and remote raster datasets (GeoTIF
 - **GPU rendering pipeline** - Band compositing, per-band rescale, 90+ colormaps, nodata filtering, linear/sqrt/log stretch, and gamma correction as deck.gl shader modules; parameter changes re-render without re-fetching tiles
 - **Auto statistics** - Per-band min/max and histograms sampled from COG overviews (or GDAL metadata), with draggable histogram handles for the rescale range
 - **Pixel inspector** - Toggle inspect mode and click the map to read the raw source values of every band of the selected layer at that location, shown in a popup (works for COGs in any CRS)
+- **OpenAerialMap search** - Search [OpenAerialMap](https://openaerialmap.org/) for openly-licensed aerial/satellite imagery over the current map view, then visualize a result as a tile layer, zoom to its footprint, or download the source GeoTIFF
 - **Colorbar legend** - A standalone `Colorbar` control: gradient + tick labels for a named colormap (or custom colors), with configurable min/max, title, units, orientation, and position
 - **Collapsible control** - A compact 29x29 map button that expands into a floating panel
 - **TypeScript + React** - Full type definitions, a React wrapper component, and hooks
@@ -118,6 +119,7 @@ The main control class implementing MapLibre's `IControl` interface.
 | `sampleDataLabel` | `string` | `'Load sample data...'` | Placeholder shown in the sample-data dropdown |
 | `closeOnOutsideClick` | `boolean` | `true` | Collapse the panel when clicking outside it; set `false` to close only via the header button |
 | `engine`      | `RenderEngine` | `'maplibre-gl-raster'` | Initial rendering backend; switchable at runtime from the panel    |
+| `openAerialMapEndpoint` | `string` | `''` | Base URL of the OpenAerialMap metadata API used by the search section; point at a proxy to work around CORS (see [OpenAerialMap search](#openaerialmap-search)). Empty uses the official endpoint |
 
 #### Raster Methods
 
@@ -183,6 +185,43 @@ control.setEngine("maplibre-gl-raster");
 
 If the package is not installed, selecting the engine surfaces a load error via
 the `error` event; the default engine keeps working.
+
+### OpenAerialMap search
+
+The panel includes an **OpenAerialMap** section that searches
+[OpenAerialMap](https://openaerialmap.org/) (OAM) for openly-licensed
+aerial/satellite imagery. Click **Search this view** to query the catalog for
+imagery covering the current map extent; each result lists a thumbnail,
+provider, capture date, and resolution, with three actions:
+
+- **Add / Remove** - Visualize the image as a MapLibre raster tile layer (served
+  by OAM's dynamic tiler) and fit the map to its footprint, or remove it.
+- **Zoom** - Fit the map to the image's footprint without adding it.
+- **Download** - Download the source Cloud Optimized GeoTIFF.
+
+**CORS note.** The OAM metadata API (`https://api.openaerialmap.org`) only sends
+CORS headers for the official OAM web app origin, so a browser on another origin
+may have the search request blocked. Set the `openAerialMapEndpoint` option to a
+same-origin proxy to work around this:
+
+```typescript
+const control = new RasterControl({
+  // e.g. a dev-server / reverse proxy that forwards to api.openaerialmap.org
+  openAerialMapEndpoint: "/oam-api",
+});
+```
+
+The catalog client is also exported for programmatic use:
+
+```typescript
+import { searchOpenAerialMap } from "maplibre-gl-raster";
+
+const { images, found } = await searchOpenAerialMap({
+  bbox: [-84.5, 33.6, -84.2, 33.9], // [west, south, east, north]
+  limit: 20,
+});
+// each image: { id, title, provider, gsd, tileUrl, cogUrl, thumbnailUrl, bbox, ... }
+```
 
 ### RasterLayerState
 

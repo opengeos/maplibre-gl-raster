@@ -1,9 +1,11 @@
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { RasterSampleDataset } from '../core/types';
 import type { LayerManager } from '../state/LayerManager';
 import { AddDataSection } from './AddDataSection';
 import { el } from './dom';
 import { EngineSection } from './EngineSection';
 import { LayerList } from './LayerList';
+import { OpenAerialMapSection } from './OpenAerialMapSection';
 import { SettingsSection, type InspectHooks } from './SettingsSection';
 
 /**
@@ -17,6 +19,7 @@ export class PanelUI {
   private _engine: EngineSection;
   private _layerList: LayerList;
   private _settings: SettingsSection;
+  private _openAerialMap?: OpenAerialMapSection;
   private _unsubscribe: (() => void)[] = [];
 
   /**
@@ -34,6 +37,10 @@ export class PanelUI {
       sampleData?: RasterSampleDataset[];
       sampleDataLabel?: string;
       inspect?: InspectHooks;
+      /** Map handle enabling the OpenAerialMap search section. */
+      map?: MapLibreMap;
+      /** Overrides the OpenAerialMap API base URL. */
+      openAerialMapEndpoint?: string;
     },
   ) {
     this._manager = manager;
@@ -77,6 +84,15 @@ export class PanelUI {
       onRemove: (id) => this._manager.removeRaster(id),
     });
 
+    // OpenAerialMap discovery: search openly-licensed aerial imagery covering
+    // the current view, then visualize or download it. Requires a map handle.
+    if (options?.map) {
+      this._openAerialMap = new OpenAerialMapSection({
+        map: options.map,
+        endpoint: options.openAerialMapEndpoint,
+      });
+    }
+
     this._settings = new SettingsSection(
       () => {
         const id = this._manager.selectedId;
@@ -94,6 +110,7 @@ export class PanelUI {
       { className: 'mlr-panel' },
       engine.el,
       addData.el,
+      ...(this._openAerialMap ? [this._openAerialMap.el] : []),
       this._layerList.el,
       this._settings.el,
     );
@@ -136,6 +153,8 @@ export class PanelUI {
   destroy(): void {
     for (const off of this._unsubscribe) off();
     this._unsubscribe = [];
+    this._openAerialMap?.destroy();
+    this._openAerialMap = undefined;
     this._root.parentNode?.removeChild(this._root);
   }
 

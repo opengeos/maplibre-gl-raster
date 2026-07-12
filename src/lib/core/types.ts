@@ -245,6 +245,17 @@ export interface RasterControlOptions {
   closeOnOutsideClick?: boolean;
 
   /**
+   * Base URL of the OpenAerialMap metadata API used by the panel's
+   * "OpenAerialMap" search section. The official endpoint
+   * (`https://api.openaerialmap.org`) only allows CORS from the OAM web app
+   * origin, so a browser on another origin may be blocked; point this at a
+   * same-origin proxy to work around that. Leave empty to use the official
+   * endpoint.
+   * @default ''
+   */
+  openAerialMapEndpoint?: string;
+
+  /**
    * Resolves a GeoTIFF's numeric EPSG code to a projection definition used for
    * reprojection. Defaults to {@link createResilientEpsgResolver}, which
    * answers common CRS offline and looks the rest up from epsg.io. Supply a

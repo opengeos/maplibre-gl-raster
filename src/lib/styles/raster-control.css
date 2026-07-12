@@ -687,6 +687,129 @@
   color: var(--mlr-accent);
 }
 
+/* OpenAerialMap search */
+.mlr-oam .mlr-button {
+  width: 100%;
+}
+
+.mlr-oam-status {
+  font-size: 11px;
+  color: var(--mlr-text-muted);
+  line-height: 1.35;
+}
+
+.mlr-oam-status.mlr-oam-error {
+  color: var(--mlr-error);
+}
+
+.mlr-oam-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mlr-oam-results:empty {
+  display: none;
+}
+
+.mlr-oam-card {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--mlr-border-faint);
+  border-radius: 4px;
+  background: var(--mlr-surface-soft);
+}
+
+.mlr-oam-thumb {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--mlr-surface-muted);
+}
+
+.mlr-oam-thumb.empty {
+  display: none;
+}
+
+.mlr-oam-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mlr-oam-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mlr-oam-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mlr-oam-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mlr-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mlr-oam-sub {
+  font-size: 10px;
+  color: var(--mlr-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mlr-oam-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.mlr-oam-action {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--mlr-border);
+  border-radius: 4px;
+  background: var(--mlr-bg);
+  color: var(--mlr-text-soft);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.mlr-oam-action:hover:not(:disabled) {
+  border-color: var(--mlr-accent);
+  color: var(--mlr-text);
+}
+
+.mlr-oam-action.active {
+  background: var(--mlr-accent);
+  border-color: var(--mlr-accent);
+  color: #fff;
+}
+
+.mlr-oam-action:disabled {
+  color: var(--mlr-disabled-text);
+  cursor: not-allowed;
+}
+
 /* Layer list */
 .mlr-layer-list {
   display: flex;

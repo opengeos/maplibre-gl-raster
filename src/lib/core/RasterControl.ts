@@ -33,6 +33,7 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   sampleDataLabel: 'Load sample data...',
   closeOnOutsideClick: true,
   engine: 'maplibre-gl-raster',
+  openAerialMapEndpoint: '',
   epsgResolver: createResilientEpsgResolver(),
 };
 
@@ -149,6 +150,10 @@ export class RasterControl implements IControl {
         defaultUrl: autoLoading ? '' : this._options.defaultUrl,
         sampleData: this._options.sampleData,
         sampleDataLabel: this._options.sampleDataLabel,
+        // Enables the OpenAerialMap search section (needs the map for the
+        // search bbox and to host visualized tile layers).
+        map,
+        openAerialMapEndpoint: this._options.openAerialMapEndpoint || undefined,
         inspect: {
           onToggle: () => this._inspector?.toggle(),
           isActive: () => this._inspector?.enabled ?? false,
