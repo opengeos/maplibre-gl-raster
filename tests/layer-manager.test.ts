@@ -528,6 +528,91 @@ describe('LayerManager bounds integration', () => {
   });
 });
 
+describe('LayerManager attribution', () => {
+  const helperId = (id: string) => `mlr-attribution-${id}`;
+
+  it('adds an attribution helper source/layer once the raster renders', async () => {
+    const { manager, map } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif', {
+      attribution: '© GEBCO',
+    });
+
+    expect(map.addSource).toHaveBeenCalledWith(helperId(id), {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+      attribution: '© GEBCO',
+    });
+    expect(map.addLayer).toHaveBeenCalledWith({
+      id: helperId(id),
+      type: 'circle',
+      source: helperId(id),
+    });
+    expect(toLayerInfo(manager.getLayer(id)!).attribution).toBe('© GEBCO');
+  });
+
+  it('adds no helper without an attribution (blanks trimmed to null)', async () => {
+    const { manager, map } = makeHarness();
+    const a = await manager.addRaster('https://example.com/a.tif');
+    const b = await manager.addRaster('https://example.com/b.tif', {
+      attribution: '   ',
+    });
+
+    for (const id of [a, b]) {
+      expect(map.addSource).not.toHaveBeenCalledWith(
+        helperId(id),
+        expect.anything(),
+      );
+      expect(manager.getLayer(id)!.attribution).toBeNull();
+    }
+  });
+
+  it('drops the helper while hidden and restores it when shown again', async () => {
+    const { manager, map } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif', {
+      attribution: '© GEBCO',
+    });
+    const addsFor = () =>
+      (map.addSource as ReturnType<typeof vi.fn>).mock.calls.filter(
+        ([sourceId]) => sourceId === helperId(id),
+      ).length;
+    expect(addsFor()).toBe(1);
+
+    manager.setVisible(id, false);
+    // Hidden: a later rebuild must not resurrect the helper.
+    manager.setState(id, { opacity: 0.5 });
+    expect(addsFor()).toBe(1);
+
+    manager.setVisible(id, true);
+    expect(addsFor()).toBe(2);
+  });
+
+  it('removes the helper when the layer is removed', async () => {
+    const { manager, map } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif', {
+      attribution: '© GEBCO',
+    });
+    (map.getLayer as ReturnType<typeof vi.fn>).mockReturnValue({});
+    (map.getSource as ReturnType<typeof vi.fn>).mockReturnValue({});
+
+    manager.removeRaster(id);
+    expect(map.removeLayer).toHaveBeenCalledWith(helperId(id));
+    expect(map.removeSource).toHaveBeenCalledWith(helperId(id));
+  });
+
+  it('adds the helper under the cog-tiler-wasm engine too', async () => {
+    const { manager, map } = makeHarness({ engine: 'cog-tiler-wasm' });
+    const id = await manager.addRaster('https://example.com/a.tif', {
+      attribution: '© GEBCO',
+    });
+    await Promise.resolve(); // let the fake module's openCog settle
+
+    expect(map.addSource).toHaveBeenCalledWith(
+      helperId(id),
+      expect.objectContaining({ attribution: '© GEBCO' }),
+    );
+  });
+});
+
 describe('LayerManager CRS resolution', () => {
   /** Pulls the epsgResolver passed to the last COGLayer pushed to the overlay.
    * This is the per-layer wrapper LayerManager builds around the dep resolver. */

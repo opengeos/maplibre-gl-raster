@@ -9,10 +9,12 @@ const SAMPLE_COGS = [
   {
     label: 'Land cover',
     url: 'https://data.source.coop/giswqs/opengeos/nlcd_2021_land_cover_30m.tif',
+    attribution: 'U.S. Geological Survey (USGS)',
   },
   {
     label: 'Elevation (DEM)',
     url: 'https://data.source.coop/giswqs/opengeos/dem.tif',
+    attribution: 'U.S. Geological Survey (USGS)',
   },
 ];
 

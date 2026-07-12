@@ -10,12 +10,14 @@ export type AddDataSectionOptions = {
   sampleData?: RasterSampleDataset[];
   /** Placeholder for the sample-data dropdown. */
   sampleDataLabel?: string;
-  /** Called with a remote COG URL and the optional before-layer id. */
-  onAddUrl: (url: string, beforeId?: string) => void;
+  /** Called with a remote COG URL and the optional before-layer id and
+   * attribution. */
+  onAddUrl: (url: string, beforeId?: string, attribution?: string) => void;
   /** Called once per locally selected or dropped GeoTIFF file, along with the
-   * optional before-layer id. Multiple files (multi-select or a multi-file
-   * drop) invoke this for each `.tif`/`.tiff` file in selection order. */
-  onAddFile: (file: File, beforeId?: string) => void;
+   * optional before-layer id and attribution. Multiple files (multi-select or
+   * a multi-file drop) invoke this for each `.tif`/`.tiff` file in selection
+   * order. */
+  onAddFile: (file: File, beforeId?: string, attribution?: string) => void;
 };
 
 /**
@@ -40,8 +42,9 @@ export class AddDataSection {
     const addFiles = (files: FileList | null | undefined): void => {
       if (!files) return;
       const beforeId = currentBeforeId();
+      const attribution = currentAttribution();
       for (const file of Array.from(files)) {
-        if (isTiff(file)) options.onAddFile(file, beforeId);
+        if (isTiff(file)) options.onAddFile(file, beforeId, attribution);
       }
     };
     const input = el('input', {
@@ -74,12 +77,24 @@ export class AddDataSection {
     });
     const currentBeforeId = () => beforeIdInput.value.trim() || undefined;
 
+    // Optional: attribution credited in the map's attribution control while
+    // the layer is visible.
+    const attributionInput = el('input', {
+      className: 'mlr-input',
+      type: 'text',
+      placeholder: 'Attribution (optional)',
+      ariaLabel: 'attribution',
+      title:
+        "Data credit shown in the map's attribution control while the layer is visible (plain text or an HTML link).",
+    });
+    const currentAttribution = () => attributionInput.value.trim() || undefined;
+
     const submitUrl = () => {
       const url = input.value.trim();
       if (!url) return;
       // Keep the URL in the input after loading so the user can edit it or load
       // it again (e.g. after switching the rendering engine).
-      options.onAddUrl(url, currentBeforeId());
+      options.onAddUrl(url, currentBeforeId(), currentAttribution());
     };
     loadBtn.addEventListener('click', submitUrl);
     input.addEventListener('keydown', (e) => {
@@ -138,6 +153,9 @@ export class AddDataSection {
           setMenuOpen(false);
           trigger.focus();
           input.value = sample.url;
+          // Fill (don't just pass) the sample's attribution so the user sees
+          // what will be credited and can edit it before a re-load.
+          if (sample.attribution) attributionInput.value = sample.attribution;
           loadBtn.disabled = input.value.trim().length === 0;
           submitUrl();
         });
@@ -207,6 +225,7 @@ export class AddDataSection {
       urlRow,
       dropZone,
       beforeIdInput,
+      attributionInput,
       ...(sampleRow ? [sampleRow] : []),
     );
   }

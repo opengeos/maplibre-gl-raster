@@ -52,12 +52,16 @@ export class PanelUI {
       initialUrl: options?.defaultUrl,
       sampleData: options?.sampleData,
       sampleDataLabel: options?.sampleDataLabel,
-      onAddUrl: (url, beforeId) => {
+      onAddUrl: (url, beforeId, attribution) => {
         // Errors surface via the manager's 'error' event and the layer row.
-        void this._manager.addRaster(url, { beforeId }).catch(() => {});
+        void this._manager
+          .addRaster(url, { beforeId, attribution })
+          .catch(() => {});
       },
-      onAddFile: (file, beforeId) => {
-        void this._manager.addRaster(file, { beforeId }).catch(() => {});
+      onAddFile: (file, beforeId, attribution) => {
+        void this._manager
+          .addRaster(file, { beforeId, attribution })
+          .catch(() => {});
       },
     });
 

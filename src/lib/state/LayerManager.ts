@@ -274,6 +274,11 @@ export class LayerManager {
   // _rebuild (so the failing resolver is not retried in a render loop) and
   // their error is surfaced once via _failLayerCrs.
   private _crsFailed = new Set<string>();
+  // Attribution strings currently applied to the map (via helper sources),
+  // by layer id. See _syncAttributions.
+  private _attributions = new globalThis.Map<string, string>();
+  private _attribStyleReady = false;
+  private _onAttribStyleLoad: (() => void) | null = null;
   private _destroyed = false;
 
   /**
@@ -375,6 +380,7 @@ export class LayerManager {
       palette: null,
       paletteTexture: null,
       beforeId: options?.beforeId?.trim() || null,
+      attribution: options?.attribution?.trim() || null,
       bounds: null,
       zoomTo: options?.zoomTo ?? true,
       loading: true,
@@ -588,6 +594,13 @@ export class LayerManager {
     }
     this._layers = [];
     this._selectedId = null;
+    for (const id of [...this._attributions.keys()]) {
+      this._removeAttribution(id);
+    }
+    if (this._onAttribStyleLoad) {
+      this._map.off('load', this._onAttribStyleLoad);
+      this._onAttribStyleLoad = null;
+    }
     if (this._overlay) {
       this._deps.removeOverlay(this._map, this._overlay);
       this._overlay = null;
@@ -751,10 +764,85 @@ export class LayerManager {
     );
   }
 
+  /** Reconciles per-layer attributions with the map's attribution control.
+   *
+   * Neither engine gives every raster a MapLibre source the control could read
+   * an attribution from (the deck.gl path renders through an overlay with no
+   * source at all), so each attributed, visible layer gets a helper: an empty
+   * GeoJSON source carrying the attribution string plus a no-op circle layer
+   * referencing it. The layer marks the source as used, which is what makes
+   * the stock AttributionControl display (and de-duplicate) the string; the
+   * empty feature collection means nothing is ever drawn or fetched. */
+  private _syncAttributions(): void {
+    // addSource/addLayer throw before the style first loads; defer the first
+    // sync until then. isStyleLoaded() may dip false again later while sources
+    // load (adding is still safe then), so latch rather than re-check.
+    if (!this._attribStyleReady) {
+      if (this._map.isStyleLoaded()) {
+        this._attribStyleReady = true;
+      } else {
+        if (!this._onAttribStyleLoad) {
+          this._onAttribStyleLoad = () => {
+            this._onAttribStyleLoad = null;
+            this._attribStyleReady = true;
+            this._syncAttributions();
+          };
+          this._map.once('load', this._onAttribStyleLoad);
+        }
+        return;
+      }
+    }
+    // Mirror the render filters: attribution shows only while the layer
+    // actually draws (loaded, visible, not errored / CRS-failed).
+    const desired = new Map<string, string>();
+    for (const l of this._layers) {
+      if (
+        l.attribution &&
+        l.geotiff &&
+        l.state.visible &&
+        !l.error &&
+        !this._crsFailed.has(l.id)
+      ) {
+        desired.set(l.id, l.attribution);
+      }
+    }
+    for (const [id, applied] of this._attributions) {
+      if (desired.get(id) !== applied) this._removeAttribution(id);
+    }
+    for (const [id, attribution] of desired) {
+      if (this._attributions.has(id)) continue;
+      const helperId = `mlr-attribution-${id}`;
+      try {
+        this._map.addSource(helperId, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+          attribution,
+        });
+        this._map.addLayer({ id: helperId, type: 'circle', source: helperId });
+        this._attributions.set(id, attribution);
+      } catch {
+        // Transient style churn; the next rebuild retries.
+      }
+    }
+  }
+
+  /** Removes a layer's attribution helper source/layer, if present. */
+  private _removeAttribution(id: string): void {
+    if (!this._attributions.delete(id)) return;
+    const helperId = `mlr-attribution-${id}`;
+    try {
+      if (this._map.getLayer(helperId)) this._map.removeLayer(helperId);
+      if (this._map.getSource(helperId)) this._map.removeSource(helperId);
+    } catch {
+      // best-effort (e.g. the style was swapped out from under us)
+    }
+  }
+
   /** Re-derives the deck.gl layer array from current layer states and pushes
    * it to the overlay. Layer ids are stable so deck.gl preserves each
    * layer's tile cache across rebuilds. */
   private _rebuild(): void {
+    this._syncAttributions();
     if (this._engine === 'cog-tiler-wasm') {
       // Keep the deck.gl overlay blank (if it was ever created) and let the
       // cog-tiler engine drive the native MapLibre raster layers.
