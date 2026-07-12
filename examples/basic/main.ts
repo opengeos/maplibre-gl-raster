@@ -16,6 +16,11 @@ const SAMPLE_COGS = [
     url: 'https://data.source.coop/giswqs/opengeos/dem.tif',
     attribution: 'U.S. Geological Survey (USGS)',
   },
+  {
+    label: 'Bathymetry (GEBCO)',
+    url: 'https://data.source.coop/giswqs/gebco-bathymetry/gebco_2026/gebco_2026.tif',
+    attribution: 'GEBCO Compilation Group (2026)',
+  },
 ];
 
 // Create map
