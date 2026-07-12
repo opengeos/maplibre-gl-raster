@@ -475,6 +475,41 @@ describe('LayerManager bounds integration', () => {
     expect(map.fitBounds).toHaveBeenCalledTimes(1);
   });
 
+  it('clamps pole-overshooting latitudes so fitBounds never sees an invalid LngLat', async () => {
+    const { manager, map, setProps } = makeHarness();
+    const id = await manager.addRaster('https://example.com/gebco.tif');
+
+    // Global rasters whose pixel size was stored rounded (e.g. GEBCO's 1/240°)
+    // compute bounds that overshoot the poles by a floating-point epsilon.
+    // MapLibre's LngLat throws on |lat| > 90, so these must be clamped.
+    lastOnGeoTIFFLoad(setProps)(makeFakeTiff(), {
+      geographicBounds: {
+        west: -180,
+        south: -90.0000000000144,
+        east: 180.00000000002876,
+        north: 90.0000000000144,
+      },
+    });
+
+    // Latitudes clamp to the valid range; longitudes pass through untouched
+    // (MapLibre accepts any longitude, and clamping would corrupt
+    // antimeridian-crossing rasters).
+    const expected = {
+      west: -180,
+      south: -90,
+      east: 180.00000000002876,
+      north: 90,
+    };
+    expect(manager.getLayer(id)!.bounds).toEqual(expected);
+    expect(map.fitBounds).toHaveBeenCalledWith(
+      [
+        [expected.west, expected.south],
+        [expected.east, expected.north],
+      ],
+      expect.anything(),
+    );
+  });
+
   it('exposes bounds, loading, and error in toLayerInfo snapshots', async () => {
     const { manager, setProps } = makeHarness();
     const id = await manager.addRaster('https://example.com/a.tif');

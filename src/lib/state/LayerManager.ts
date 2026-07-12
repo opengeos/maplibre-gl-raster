@@ -50,6 +50,23 @@ import {
 export const DEFAULT_ENGINE: RenderEngine = 'maplibre-gl-raster';
 
 /**
+ * Clamps a bounds' latitudes to the valid WGS84 range. GeoTIFF bounds are
+ * derived as `origin + n * pixelSize`, so a global raster whose pixel size was
+ * stored rounded (e.g. GEBCO's 1/240° stored as 0.004166666666667) can
+ * overshoot the poles by a floating-point epsilon — and MapLibre's LngLat
+ * rejects any latitude outside [-90, 90], crashing fitBounds. Longitudes are
+ * left alone: MapLibre accepts any longitude, and clamping would corrupt
+ * antimeridian-crossing rasters.
+ */
+function clampBoundsLatitude(bounds: GeographicBounds): GeographicBounds {
+  const clamp = (lat: number) => Math.min(90, Math.max(-90, lat));
+  const south = clamp(bounds.south);
+  const north = clamp(bounds.north);
+  if (south === bounds.south && north === bounds.north) return bounds;
+  return { ...bounds, south, north };
+}
+
+/**
  * The band indexes a layer actually samples, deduped and sorted. Mirrors the
  * `requested` logic in render-pipeline's buildRenderTile: RGB samples the first
  * three entries (R, G, B); single-band / colormap / palette the first one. The
@@ -642,10 +659,10 @@ export class LayerManager {
     const layer = this.getLayer(id);
     if (!layer) return;
     const boundsArrived = !layer.bounds;
-    layer.bounds = bounds;
+    layer.bounds = clampBoundsLatitude(bounds);
     if (zoomTo && layer.zoomTo) {
       layer.zoomTo = false;
-      this._fitBounds(bounds);
+      this._fitBounds(layer.bounds);
     }
     if (boundsArrived) this._emit({ type: 'rasterchange', layerId: id });
   }
@@ -790,7 +807,7 @@ export class LayerManager {
         // re-fire on later rebuilds with the same already-loaded GeoTIFF, and
         // re-emitting there could ping-pong with handlers that call setState.
         const boundsArrived = !layer.bounds;
-        layer.bounds = options.geographicBounds;
+        layer.bounds = clampBoundsLatitude(options.geographicBounds);
         if (layer.zoomTo) {
           layer.zoomTo = false;
           this._fitBounds(layer.bounds);
