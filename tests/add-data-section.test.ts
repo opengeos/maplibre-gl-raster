@@ -278,4 +278,45 @@ describe('AddDataSection sample dropdown', () => {
       section.el.querySelector<HTMLElement>('.mlr-sample-menu')!.hidden,
     ).toBe(true);
   });
+
+  it("fills the attribution input from the sample and passes it through, leaving it untouched for samples without one", () => {
+    const { section, onAddUrl } = createSection({
+      sampleData: [
+        {
+          label: 'Land cover',
+          url: 'https://example.com/landcover.tif',
+          attribution: 'U.S. Geological Survey (USGS)',
+        },
+        { label: 'Elevation', url: 'https://example.com/dem.tif' },
+      ],
+    });
+    const attribution = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=attribution]',
+    )!;
+    const trigger = section.el.querySelector<HTMLButtonElement>(
+      '.mlr-sample-trigger',
+    )!;
+    const options =
+      section.el.querySelectorAll<HTMLButtonElement>('.mlr-sample-option');
+
+    trigger.click();
+    options[0].click();
+    expect(attribution.value).toBe('U.S. Geological Survey (USGS)');
+    expect(onAddUrl).toHaveBeenLastCalledWith(
+      'https://example.com/landcover.tif',
+      undefined,
+      'U.S. Geological Survey (USGS)',
+    );
+
+    // A sample without an attribution keeps whatever the input holds.
+    attribution.value = '© custom';
+    trigger.click();
+    options[1].click();
+    expect(attribution.value).toBe('© custom');
+    expect(onAddUrl).toHaveBeenLastCalledWith(
+      'https://example.com/dem.tif',
+      undefined,
+      '© custom',
+    );
+  });
 });

@@ -153,6 +153,9 @@ export class AddDataSection {
           setMenuOpen(false);
           trigger.focus();
           input.value = sample.url;
+          // Fill (don't just pass) the sample's attribution so the user sees
+          // what will be credited and can edit it before a re-load.
+          if (sample.attribution) attributionInput.value = sample.attribution;
           loadBtn.disabled = input.value.trim().length === 0;
           submitUrl();
         });

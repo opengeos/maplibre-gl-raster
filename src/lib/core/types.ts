@@ -163,6 +163,11 @@ export interface RasterSampleDataset {
 
   /** COG URL filled into the Add data input when this entry is picked. */
   url: string;
+
+  /** Attribution filled into the panel's Attribution input when this entry is
+   * picked (shown in the map's attribution control while the layer is
+   * visible). Leaves the input untouched when omitted. */
+  attribution?: string;
 }
 
 /**
