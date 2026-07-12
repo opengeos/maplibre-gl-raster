@@ -117,6 +117,9 @@ export interface RasterLayerInfo {
   bandNames: globalThis.Map<number, string> | null;
   /** Map style layer id the raster is inserted beneath, when set. */
   beforeId: string | null;
+  /** Attribution shown in the map's attribution control while the layer is
+   * visible, when set. */
+  attribution: string | null;
   /** Geographic (WGS84) bounds, known once the raster renders. A
    * 'rasterchange' event fires when they become available. */
   bounds: GeographicBounds | null;
@@ -145,6 +148,9 @@ export interface AddRasterOptions {
    * symbol layer so labels stay readable). Drawn on top when omitted or when
    * the layer does not exist. */
   beforeId?: string;
+  /** Attribution shown in the map's attribution control while the layer is
+   * visible (plain text or HTML, e.g. an anchor tag; MapLibre sanitizes it). */
+  attribution?: string;
 }
 
 /**

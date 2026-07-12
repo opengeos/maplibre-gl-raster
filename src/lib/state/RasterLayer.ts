@@ -67,6 +67,8 @@ export interface RasterLayer {
   paletteTexture: Texture | null;
   /** Map style layer id to insert the raster beneath, when set. */
   beforeId: string | null;
+  /** Attribution shown in the map's attribution control while visible. */
+  attribution: string | null;
   bounds: GeographicBounds | null;
   /** Fit the map to the layer bounds once loaded. */
   zoomTo: boolean;
@@ -90,6 +92,7 @@ export function toLayerInfo(layer: RasterLayer): RasterLayerInfo {
     bandCount: layer.bandCount,
     bandNames: layer.bandNames ? new Map(layer.bandNames) : null,
     beforeId: layer.beforeId,
+    attribution: layer.attribution,
     bounds: layer.bounds ? { ...layer.bounds } : null,
     loading: layer.loading,
     error: layer.error,

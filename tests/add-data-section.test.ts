@@ -39,7 +39,12 @@ describe('AddDataSection local files', () => {
     input.dispatchEvent(new Event('change'));
 
     expect(onAddFile).toHaveBeenCalledTimes(2);
-    expect(onAddFile).toHaveBeenNthCalledWith(1, expect.any(File), undefined);
+    expect(onAddFile).toHaveBeenNthCalledWith(
+      1,
+      expect.any(File),
+      undefined,
+      undefined,
+    );
     expect((onAddFile.mock.calls[0][0] as File).name).toBe('a.tif');
     expect((onAddFile.mock.calls[1][0] as File).name).toBe('b.tiff');
     // Selection is cleared so re-picking the same files fires again.
@@ -62,8 +67,72 @@ describe('AddDataSection local files', () => {
     });
     input.dispatchEvent(new Event('change'));
 
-    expect(onAddFile).toHaveBeenNthCalledWith(1, expect.any(File), 'labels');
-    expect(onAddFile).toHaveBeenNthCalledWith(2, expect.any(File), 'labels');
+    expect(onAddFile).toHaveBeenNthCalledWith(
+      1,
+      expect.any(File),
+      'labels',
+      undefined,
+    );
+    expect(onAddFile).toHaveBeenNthCalledWith(
+      2,
+      expect.any(File),
+      'labels',
+      undefined,
+    );
+  });
+
+  it('passes the attribution with each added file', () => {
+    const { section, onAddFile } = createSection();
+    const attribution = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=attribution]',
+    )!;
+    attribution.value = '© GEBCO';
+
+    const input = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=raster-file]',
+    )!;
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [tiff('a.tif')],
+    });
+    input.dispatchEvent(new Event('change'));
+
+    expect(onAddFile).toHaveBeenCalledWith(
+      expect.any(File),
+      undefined,
+      '© GEBCO',
+    );
+  });
+
+  it('passes the attribution when loading a URL, trimming blanks to undefined', () => {
+    const { section, onAddUrl } = createSection();
+    const url = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=raster-url]',
+    )!;
+    const attribution = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=attribution]',
+    )!;
+    const loadBtn = section.el.querySelector<HTMLButtonElement>(
+      'button[aria-label=load-url]',
+    )!;
+
+    url.value = 'https://example.com/a.tif';
+    url.dispatchEvent(new Event('input'));
+    attribution.value = '  © NOAA  ';
+    loadBtn.click();
+    expect(onAddUrl).toHaveBeenCalledWith(
+      'https://example.com/a.tif',
+      undefined,
+      '© NOAA',
+    );
+
+    attribution.value = '   ';
+    loadBtn.click();
+    expect(onAddUrl).toHaveBeenLastCalledWith(
+      'https://example.com/a.tif',
+      undefined,
+      undefined,
+    );
   });
 
   it('adds every dropped .tif file', () => {
@@ -152,7 +221,7 @@ describe('AddDataSection sample dropdown', () => {
     expect(menu.hidden).toBe(true);
   });
 
-  it('renders the sample dropdown after the direct URL, file, and before-id inputs', () => {
+  it('renders the sample dropdown after the direct URL, file, before-id, and attribution inputs', () => {
     const { section } = createSection({
       sampleData: [
         { label: 'Land cover', url: 'https://example.com/landcover.tif' },
@@ -172,11 +241,15 @@ describe('AddDataSection sample dropdown', () => {
     const beforeIdIndex = children.findIndex(
       (child) => child.getAttribute('aria-label') === 'before-id',
     );
+    const attributionIndex = children.findIndex(
+      (child) => child.getAttribute('aria-label') === 'attribution',
+    );
 
     expect(urlIndex).toBeGreaterThan(-1);
     expect(dropIndex).toBeGreaterThan(urlIndex);
     expect(beforeIdIndex).toBeGreaterThan(dropIndex);
-    expect(sampleIndex).toBeGreaterThan(beforeIdIndex);
+    expect(attributionIndex).toBeGreaterThan(beforeIdIndex);
+    expect(sampleIndex).toBeGreaterThan(attributionIndex);
   });
 
   it('fills the URL input, enables Load, and loads when an option is picked', () => {
@@ -198,6 +271,7 @@ describe('AddDataSection sample dropdown', () => {
     expect(loadBtn.disabled).toBe(false);
     expect(onAddUrl).toHaveBeenCalledWith(
       'https://example.com/landcover.tif',
+      undefined,
       undefined,
     );
     expect(
