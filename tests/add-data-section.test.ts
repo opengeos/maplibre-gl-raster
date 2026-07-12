@@ -13,6 +13,75 @@ function createSection(
   return { section, onAddUrl, onAddFile };
 }
 
+function tiff(name: string): File {
+  return new File([new Uint8Array([0])], name, { type: 'image/tiff' });
+}
+
+describe('AddDataSection local files', () => {
+  it('allows selecting multiple files at once', () => {
+    const { section } = createSection();
+    const input = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=raster-file]',
+    )!;
+    expect(input.multiple).toBe(true);
+  });
+
+  it('adds every selected .tif file, skipping non-tiff files', () => {
+    const { section, onAddFile } = createSection();
+    const input = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=raster-file]',
+    )!;
+
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [tiff('a.tif'), tiff('b.tiff'), new File([''], 'notes.txt')],
+    });
+    input.dispatchEvent(new Event('change'));
+
+    expect(onAddFile).toHaveBeenCalledTimes(2);
+    expect(onAddFile).toHaveBeenNthCalledWith(1, expect.any(File), undefined);
+    expect((onAddFile.mock.calls[0][0] as File).name).toBe('a.tif');
+    expect((onAddFile.mock.calls[1][0] as File).name).toBe('b.tiff');
+    // Selection is cleared so re-picking the same files fires again.
+    expect(input.value).toBe('');
+  });
+
+  it('passes the before-layer id with each added file', () => {
+    const { section, onAddFile } = createSection();
+    const beforeId = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=before-id]',
+    )!;
+    beforeId.value = 'labels';
+
+    const input = section.el.querySelector<HTMLInputElement>(
+      'input[aria-label=raster-file]',
+    )!;
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [tiff('a.tif'), tiff('b.tif')],
+    });
+    input.dispatchEvent(new Event('change'));
+
+    expect(onAddFile).toHaveBeenNthCalledWith(1, expect.any(File), 'labels');
+    expect(onAddFile).toHaveBeenNthCalledWith(2, expect.any(File), 'labels');
+  });
+
+  it('adds every dropped .tif file', () => {
+    const { section, onAddFile } = createSection();
+    const dropZone = section.el.querySelector<HTMLElement>('.mlr-drop-zone')!;
+
+    const event = new Event('drop') as Event & { dataTransfer: unknown };
+    Object.defineProperty(event, 'dataTransfer', {
+      value: { files: [tiff('one.tif'), tiff('two.tif')] },
+    });
+    dropZone.dispatchEvent(event);
+
+    expect(onAddFile).toHaveBeenCalledTimes(2);
+    expect((onAddFile.mock.calls[0][0] as File).name).toBe('one.tif');
+    expect((onAddFile.mock.calls[1][0] as File).name).toBe('two.tif');
+  });
+});
+
 describe('AddDataSection sample dropdown', () => {
   it('renders no dropdown when no samples are given', () => {
     const { section } = createSection();
