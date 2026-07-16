@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   Colormap,
   COLORMAP_INDEX,
+  MaskTexture,
 } from '@developmentseed/deck.gl-raster/gpu-modules';
 import type { Texture } from '@luma.gl/core';
 import {
   buildIndexCompositeRenderTile,
+  buildRgbCompositeRenderTile,
   buildSingleCompositeRenderTile,
   DEFAULT_INDEX_RANGE,
 } from '../src/lib/raster/render-pipeline';
@@ -15,7 +17,7 @@ import type { MultiBandTileData } from '../src/lib/raster/tile-loader';
 
 // Minimal tile with a single band. buildCompositeBandsProps only stores the
 // textures/uvTransforms into props, so a placeholder texture is fine here.
-function fakeTile(): MultiBandTileData {
+function fakeTile(maskTexture: Texture | null = null): MultiBandTileData {
   return {
     bands: new Map([
       ['1', { texture: {} as Texture, uvTransform: [0, 0, 1, 1] }],
@@ -25,16 +27,20 @@ function fakeTile(): MultiBandTileData {
     byteLength: 0,
     nodata: null,
     sampleScale: 255,
+    maskTexture,
   };
 }
 
 // A tile carrying `count` bands (keyed '1'..'count'), for index/RGB paths.
-function fakeMultiBandTile(count: number): MultiBandTileData {
+function fakeMultiBandTile(
+  count: number,
+  maskTexture: Texture | null = null,
+): MultiBandTileData {
   const bands = new Map<string, { texture: Texture; uvTransform: [number, number, number, number] }>();
   for (let b = 1; b <= count; b++) {
     bands.set(String(b), { texture: {} as Texture, uvTransform: [0, 0, 1, 1] });
   }
-  return { bands, width: 256, height: 256, byteLength: 0, nodata: null, sampleScale: 255 };
+  return { bands, width: 256, height: 256, byteLength: 0, nodata: null, sampleScale: 255, maskTexture };
 }
 
 function colormapProps(reversed?: boolean): Record<string, unknown> | undefined {
@@ -120,5 +126,55 @@ describe('index (normalized-difference) render pipeline', () => {
     const state = createLayerState({ mode: 'index', bands: [4, 3] });
     const renderTile = buildIndexCompositeRenderTile(state, {} as Texture);
     expect(renderTile(fakeMultiBandTile(0)).renderPipeline).toEqual([]);
+  });
+});
+
+describe('internal validity mask (per-dataset mask IFD)', () => {
+  const maskTex = {} as Texture;
+
+  const hasMask = (pipeline: { module: unknown; props?: unknown }[]) =>
+    pipeline.some((m) => m.module === MaskTexture);
+
+  const maskProps = (pipeline: { module: unknown; props?: unknown }[]) =>
+    pipeline.find((m) => m.module === MaskTexture)?.props as
+      | { maskTexture: Texture }
+      | undefined;
+
+  it('discards masked fragments in RGB mode when a mask texture is present', () => {
+    const state = createLayerState({ mode: 'rgb', bands: [1, 2, 3] });
+    const renderTile = buildRgbCompositeRenderTile(state, null);
+    const { renderPipeline } = renderTile(fakeMultiBandTile(3, maskTex));
+    expect(hasMask(renderPipeline)).toBe(true);
+    expect(maskProps(renderPipeline)?.maskTexture).toBe(maskTex);
+  });
+
+  it('applies the mask even when the user set nodata to "off"', () => {
+    // The internal mask is the authoritative validity signal; "off" only
+    // disables scalar-value nodata filtering, never the mask.
+    const state = createLayerState({ mode: 'rgb', bands: [1, 2, 3], nodata: 'off' });
+    const renderTile = buildRgbCompositeRenderTile(state, null);
+    const { renderPipeline } = renderTile(fakeMultiBandTile(3, maskTex));
+    expect(hasMask(renderPipeline)).toBe(true);
+  });
+
+  it('applies the mask in single-band and index modes', () => {
+    const single = buildSingleCompositeRenderTile(
+      createLayerState({ mode: 'single', bands: [1], colormap: 'viridis' }),
+      {} as Texture,
+      null,
+    );
+    expect(hasMask(single(fakeTile(maskTex)).renderPipeline)).toBe(true);
+
+    const index = buildIndexCompositeRenderTile(
+      createLayerState({ mode: 'index', bands: [4, 3] }),
+      {} as Texture,
+    );
+    expect(hasMask(index(fakeMultiBandTile(4, maskTex)).renderPipeline)).toBe(true);
+  });
+
+  it('omits the MaskTexture module when the source declares no mask', () => {
+    const state = createLayerState({ mode: 'rgb', bands: [1, 2, 3] });
+    const renderTile = buildRgbCompositeRenderTile(state, null);
+    expect(hasMask(renderTile(fakeMultiBandTile(3)).renderPipeline)).toBe(false);
   });
 });

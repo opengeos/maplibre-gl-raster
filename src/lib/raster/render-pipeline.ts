@@ -8,6 +8,7 @@ import {
   Colormap,
   CompositeBands,
   FilterNoDataVal,
+  MaskTexture,
 } from '@developmentseed/deck.gl-raster/gpu-modules';
 import type { Texture } from '@luma.gl/core';
 import type { RasterLayerState } from '../core/types';
@@ -212,6 +213,25 @@ function pushNodataFilters(
   }
 }
 
+/** Push the internal-mask discard module when the tile carries a validity
+ * mask from the COG's per-dataset mask IFD. Applied regardless of the scalar
+ * `nodata` setting (including `nodata: 'off'`) — the mask is the authoritative
+ * validity signal that GDAL/QGIS/titiler honour by default, and it is the only
+ * way to hide the border of a lossy JPEG/YCbCr mosaic where no pixel value can
+ * separate nodata from valid dark pixels. Discards fragments early, before
+ * rescale / colormap, so masked pixels never contribute colour. */
+function pushMaskFilter(
+  data: MultiBandTileData,
+  pipeline: RasterModule[],
+): void {
+  if (data.maskTexture) {
+    pipeline.push({
+      module: MaskTexture,
+      props: { maskTexture: data.maskTexture },
+    });
+  }
+}
+
 /** Shared renderTile builder. Handles both RGB and single-band paths
  * via a discriminated `mode`. The two paths differ only in: (a) which
  * bands feed CompositeBands, (b) whether a Colormap module is appended
@@ -236,6 +256,7 @@ function buildRenderTile(
       { module: CompositeBands, props: compositeProps },
     ];
 
+    pushMaskFilter(data, pipeline);
     pushNodataFilters(state, data, pipeline);
 
     if (mode.kind === 'palette') {
@@ -378,6 +399,7 @@ export function buildIndexCompositeRenderTile(
 
     // Discard nodata against the raw band values, before the index collapses
     // them (a masked pixel in either operand should not colour the output).
+    pushMaskFilter(data, pipeline);
     pushNodataFilters(state, data, pipeline);
 
     pipeline.push({ module: NormalizedDifference });

@@ -26,6 +26,15 @@ export type MultiBandTileData = {
   byteLength: number;
   nodata: number | null;
   /**
+   * Single-channel (`r8unorm`) validity mask uploaded from the COG's internal
+   * per-dataset mask IFD, when the source has one. Pixels read 0 where the
+   * mask marks nodata (e.g. the lossless border of a JPEG/YCbCr mosaic that no
+   * scalar `nodata` can separate from valid dark pixels) and non-zero where
+   * valid. `null` when the source declares no mask. The render pipeline
+   * discards masked fragments via `MaskTexture`, independent of the scalar
+   * `nodata` setting. */
+  maskTexture: Texture | null;
+  /**
    * Divisor that maps source-space sample values to the value the GPU
    * fragment shader actually reads for this tile's textures. For
    * `r8unorm` the GPU normalizes uint8 0..255 into 0..1, so source-unit
@@ -148,6 +157,21 @@ export function makeMultiBandTileLoader(bandIndexes: number[]) {
       // upcasts int16/uint16 to Float32 (4 bytes).
       totalBytes += array.width * array.height * data.BYTES_PER_ELEMENT;
     }
+    // Upload the internal validity mask (if any) as a single-channel texture.
+    // Nearest filtering avoids interpolating the 0/valid boundary into halos
+    // along the nodata edge. The mask covers the whole tile, so it shares the
+    // band textures' identity UV.
+    let maskTexture: Texture | null = null;
+    if (array.mask) {
+      maskTexture = device.createTexture({
+        data: array.mask,
+        format: 'r8unorm',
+        width: array.width,
+        height: array.height,
+        sampler: { minFilter: 'nearest', magFilter: 'nearest' },
+      });
+      totalBytes += array.mask.byteLength;
+    }
     const result: MultiBandTileData = {
       bands,
       width: array.width,
@@ -155,12 +179,12 @@ export function makeMultiBandTileLoader(bandIndexes: number[]) {
       byteLength: totalBytes,
       nodata: array.nodata,
       sampleScale,
+      maskTexture,
     };
-    if (tileFinalizer && bands.size > 0) {
-      tileFinalizer.register(
-        result,
-        Array.from(bands.values(), (v) => v.texture),
-      );
+    const ownedTextures = Array.from(bands.values(), (v) => v.texture);
+    if (maskTexture) ownedTextures.push(maskTexture);
+    if (tileFinalizer && ownedTextures.length > 0) {
+      tileFinalizer.register(result, ownedTextures);
     }
     return result;
   };
