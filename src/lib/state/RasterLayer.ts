@@ -139,26 +139,34 @@ function containsPoint(
 }
 
 /**
- * The layer's images that could carry a sample at `lngLat`, in priority order.
+ * The layer's images that could carry a sample at `lngLat`, topmost first.
  *
  * A plain layer has exactly one image. A mosaic VRT layer has one per member,
  * and only the members whose extent covers the point are worth reading — a
  * member whose bounds have not been reported yet stays a candidate rather than
  * being skipped, since bounds only arrive once a member renders.
  *
+ * Members are returned in reverse document order because that is the order they
+ * are drawn in: `LayerManager` builds one deck.gl layer per member in member
+ * order, so later members paint over earlier ones — matching GDAL, where a
+ * VRT's later sources overwrite earlier ones. Sources placed at their natural
+ * position can still overlap (adjacent scenes commonly do), so where they do,
+ * the last one is what the user sees and therefore what a reader should report.
+ *
  * @param layer - The layer to read from
  * @param lngLat - The location, [lng, lat] in WGS84
- * @returns Candidate images; empty when the layer has not loaded or the point
- *   falls outside every member
+ * @returns Candidate images, topmost first; empty when the layer has not loaded
+ *   or the point falls outside every member
  */
 export function imagesAt(
   layer: RasterLayer,
   lngLat: [number, number],
 ): GeoTIFF[] {
   if (!layer.members) return layer.geotiff ? [layer.geotiff] : [];
-  return layer.members
-    .filter((m) => !m.bounds || containsPoint(m.bounds, lngLat))
-    .map((m) => m.geotiff);
+  const covering = layer.members.filter(
+    (m) => !m.bounds || containsPoint(m.bounds, lngLat),
+  );
+  return covering.reverse().map((m) => m.geotiff);
 }
 
 /**

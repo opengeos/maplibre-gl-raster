@@ -42,6 +42,15 @@ describe('isVrtUrl / isVrtFile', () => {
     expect(isVrtUrl('mosaic.vrt')).toBe(true);
   });
 
+  it('strips query strings and fragments from relative URLs too', () => {
+    // A relative URL has no scheme to key off, and a fragment is not a query.
+    expect(isVrtUrl('/data/mosaic.vrt?token=x')).toBe(true);
+    expect(isVrtUrl('mosaic.vrt#section')).toBe(true);
+    expect(isVrtUrl('https://example.com/a/mosaic.vrt#s')).toBe(true);
+    expect(isVrtUrl('https://example.com/a/mosaic.vrt?t=1#s')).toBe(true);
+    expect(isVrtUrl('/data/cog.tif?name=x.vrt')).toBe(false);
+  });
+
   it('does not match other rasters', () => {
     expect(isVrtUrl('https://example.com/a/cog.tif')).toBe(false);
     // A .tif with "vrt" elsewhere in the path must not be misread.
@@ -93,8 +102,9 @@ describe('parseVrt', () => {
     ]);
   });
 
-  it('accepts a ComplexSource that only declares NODATA', () => {
-    // What gdalbuildvrt -srcnodata emits; equivalent to a SimpleSource.
+  it('accepts a ComplexSource that only declares NODATA, and carries the value', () => {
+    // What gdalbuildvrt -srcnodata emits; equivalent to a SimpleSource plus a
+    // nodata declaration.
     const vrt = mosaicVrt(`<ComplexSource>
       <SourceFilename relativeToVRT="1">tile_a.tif</SourceFilename>
       <SourceBand>1</SourceBand>
@@ -102,7 +112,27 @@ describe('parseVrt', () => {
       <DstRect xOff="0" yOff="0" xSize="1000" ySize="1000"/>
       <NODATA>255</NODATA>
     </ComplexSource>`);
-    expect(parseVrt(vrt, VRT_URL).members).toHaveLength(1);
+    const mosaic = parseVrt(vrt, VRT_URL);
+    expect(mosaic.members).toHaveLength(1);
+    // The source's NODATA describes the member's own pixels — which is what
+    // gets drawn — so it wins over the band's <NoDataValue> of 0.
+    expect(mosaic.nodata).toBe(255);
+  });
+
+  it('carries a source NODATA when the band declares none', () => {
+    const vrt = `<VRTDataset rasterXSize="10" rasterYSize="10">
+      <VRTRasterBand dataType="Byte" band="1">
+        <ComplexSource>
+          <SourceFilename relativeToVRT="1">a.tif</SourceFilename>
+          <NODATA>-9999</NODATA>
+        </ComplexSource>
+      </VRTRasterBand>
+    </VRTDataset>`;
+    expect(parseVrt(vrt, VRT_URL).nodata).toBe(-9999);
+  });
+
+  it('falls back to the band NoDataValue when no source declares one', () => {
+    expect(parseVrt(mosaicVrt(simpleSource('a.tif')), VRT_URL).nodata).toBe(0);
   });
 
   it('accepts sources with no SrcRect/DstRect (whole-file placement)', () => {
@@ -179,6 +209,60 @@ describe('parseVrt on real gdalbuildvrt output', () => {
       ySize: 512,
     });
   });
+
+  it('rejects the <UseMaskBand> GDAL emits for sources with a mask band', () => {
+    // Verbatim output of `gdalbuildvrt mask.vrt masked_a.tif` where the source
+    // carries an internal mask band (GDAL 3.12.2). GDAL applies that mask while
+    // compositing; drawn on its own, the masked-out pixels would render as data.
+    const MASKED_VRT = `<VRTDataset rasterXSize="512" rasterYSize="512">
+  <GeoTransform> -1.0000000000000000e+01,  1.9531250000000000e-02,  0.0000000000000000e+00,  1.0000000000000000e+01,  0.0000000000000000e+00, -1.9531250000000000e-02</GeoTransform>
+  <VRTRasterBand dataType="Byte" band="1">
+    <ColorInterp>Gray</ColorInterp>
+    <ComplexSource>
+      <SourceFilename relativeToVRT="1">masked_a.tif</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SourceProperties RasterXSize="512" RasterYSize="512" DataType="Byte" BlockXSize="256" BlockYSize="256" />
+      <SrcRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <DstRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <UseMaskBand>true</UseMaskBand>
+    </ComplexSource>
+  </VRTRasterBand>
+</VRTDataset>`;
+    expect(() => parseVrt(MASKED_VRT, VRT_URL)).toThrow(VrtUnsupportedError);
+    expect(() => parseVrt(MASKED_VRT, VRT_URL)).toThrow(
+      /masks its sources through their mask bands/,
+    );
+  });
+
+  it('carries the NODATA gdalbuildvrt -srcnodata writes on each source', () => {
+    // Verbatim shape of `gdalbuildvrt -srcnodata 0 …`: a band <NoDataValue>
+    // plus a per-source <NODATA>, which GDAL keeps in sync.
+    const SRCNODATA_VRT = `<VRTDataset rasterXSize="1024" rasterYSize="512">
+  <VRTRasterBand dataType="Byte" band="1">
+    <NoDataValue>0</NoDataValue>
+    <ColorInterp>Gray</ColorInterp>
+    <ComplexSource>
+      <SourceFilename relativeToVRT="1">tile_a.tif</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SourceProperties RasterXSize="512" RasterYSize="512" DataType="Byte" BlockXSize="512" BlockYSize="512" />
+      <SrcRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <DstRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <NODATA>0</NODATA>
+    </ComplexSource>
+    <ComplexSource>
+      <SourceFilename relativeToVRT="1">tile_b.tif</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SourceProperties RasterXSize="512" RasterYSize="512" DataType="Byte" BlockXSize="512" BlockYSize="512" />
+      <SrcRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <DstRect xOff="512" yOff="0" xSize="512" ySize="512" />
+      <NODATA>0</NODATA>
+    </ComplexSource>
+  </VRTRasterBand>
+</VRTDataset>`;
+    const mosaic = parseVrt(SRCNODATA_VRT, VRT_URL);
+    expect(mosaic.members).toHaveLength(2);
+    expect(mosaic.nodata).toBe(0);
+  });
 });
 
 describe('parseVrt rejections', () => {
@@ -237,6 +321,53 @@ describe('parseVrt rejections', () => {
       <LUT>0:0,255:255</LUT>
     </ComplexSource>`);
     expectReject(vrt, /<LUT>/);
+  });
+
+  it('rejects sources masked through a mask band', () => {
+    // gdalbuildvrt emits <UseMaskBand> whenever a source carries an internal
+    // mask band. Members are drawn on their own, so the mask would be lost and
+    // masked-out pixels would render as data.
+    const vrt = mosaicVrt(`<ComplexSource>
+      <SourceFilename relativeToVRT="1">a.tif</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <UseMaskBand>true</UseMaskBand>
+    </ComplexSource>`);
+    expectReject(vrt, /masks its sources through their mask bands/);
+  });
+
+  it('rejects sources that disagree on NODATA', () => {
+    const source = (file: string, nodata: number) => `<ComplexSource>
+      <SourceFilename relativeToVRT="1">${file}</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <NODATA>${nodata}</NODATA>
+    </ComplexSource>`;
+    const vrt = mosaicVrt(source('a.tif', 0) + source('b.tif', 255));
+    expectReject(vrt, /different <NODATA> values .*\(0, 255\)/);
+  });
+
+  it('rejects a cropped source even without SourceProperties', () => {
+    // The size comparison needs SourceProperties, but a non-zero origin is a
+    // crop regardless.
+    const vrt = mosaicVrt(`<SimpleSource>
+      <SourceFilename relativeToVRT="1">a.tif</SourceFilename>
+      <SrcRect xOff="100" yOff="0" xSize="900" ySize="1000"/>
+      <DstRect xOff="0" yOff="0" xSize="900" ySize="1000"/>
+    </SimpleSource>`);
+    expectReject(vrt, /reads only part of "a.tif"/);
+  });
+
+  it('rejects bands that place the same files differently', () => {
+    const band = (n: number, xOff: number) =>
+      `<VRTRasterBand dataType="Byte" band="${n}">
+        <SimpleSource>
+          <SourceFilename relativeToVRT="1">a.tif</SourceFilename>
+          <SourceBand>${n}</SourceBand>
+          <SrcRect xOff="0" yOff="0" xSize="100" ySize="100"/>
+          <DstRect xOff="${xOff}" yOff="0" xSize="100" ySize="100"/>
+        </SimpleSource>
+      </VRTRasterBand>`;
+    const vrt = `<VRTDataset rasterXSize="10" rasterYSize="10">${band(1, 0)}${band(2, 500)}</VRTDataset>`;
+    expectReject(vrt, /places them differently/);
   });
 
   it('rejects a kernel-filtered source', () => {

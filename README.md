@@ -122,7 +122,7 @@ The main control class implementing MapLibre's `IControl` interface.
 
 #### Raster Methods
 
-- `addRaster(source, options?)` - Add a raster from a COG or [mosaic `.vrt`](#mosaic-vrt-support) URL (`string`), or a local GeoTIFF `File`; resolves with the layer id
+- `addRaster(source, options?)` - Add a raster from a COG or [mosaic `.vrt`](#mosaic-vrt-support) URL (`string`), or a local GeoTIFF / `.vrt` `File` (a local `.vrt` must name its sources as absolute URLs); resolves with the layer id
 - `removeRaster(id)` - Remove a raster layer
 - `getRaster(id)` / `getRasters()` - Get layer snapshots (`RasterLayerInfo`); for a mosaic VRT, `memberUrls` lists the COGs it expanded to
 - `setRasterState(id, patch)` - Update visualization state (mode, bands, rescale, colormap, reversed, nodata, opacity, gamma, stretch, visible)
@@ -333,7 +333,9 @@ gdalbuildvrt mosaic.vrt tile_*.tif   # then load mosaic.vrt by URL
 
 Each source is loaded as its own COG and rendered as its own tiled layer, georeferenced by its own headers. They appear as **one layer** in the panel: one set of settings, one rescale window, one colorbar. Auto statistics are sampled from every member and merged, so the shared stretch describes the whole mosaic rather than whichever tile happened to be first.
 
-Sources may be relative to the `.vrt`, absolute `https://` URLs, or `/vsicurl/https://…`. Every one must be a CORS-enabled COG.
+Sources may be relative to the `.vrt`, absolute `https://` URLs, or `/vsicurl/https://…`. Every one must be a CORS-enabled COG. Relative sources always resolve against the `.vrt`'s own location: a browser has no working directory, so GDAL's `relativeToVRT="0"` ("relative to the process working directory") has no meaning here.
+
+Nodata comes from the sources' `<NODATA>` when they declare one, falling back to the band's `<NoDataValue>`. A source's `<NODATA>` describes values in the member's own pixels — which is what actually gets drawn — while `<NoDataValue>` describes the VRT's output; `gdalbuildvrt` writes both and they usually agree, but `-srcnodata X -vrtnodata Y` makes them differ.
 
 ### What is not supported
 
@@ -345,6 +347,8 @@ Anything that needs GDAL's pixel machinery is **rejected with an actionable erro
 | Pixel functions (`VRTDerivedRasterBand`) | Runs inside GDAL |
 | `<LUT>`, `<ScaleRatio>`, `<ScaleOffset>`, `<Exponent>` | Rescales sample values |
 | `<KernelFilteredSource>`, `<AveragedSource>` | Composites pixels |
+| `<UseMaskBand>` (sources with an internal mask band) | GDAL applies each source's mask while compositing; drawn separately, masked-out pixels would render as data |
+| Sources declaring different `<NODATA>` values | Members share one nodata setting |
 | Cropped (`<SrcRect>` sub-window) or rescaled (`<DstRect>` ≠ `<SrcRect>`) sources | Members are drawn from their own georeferencing, so the VRT's placement cannot be honoured |
 | Band remapping (`<SourceBand>` ≠ band number) | Band N is read from band N of each member |
 | Bands built from different file sets | Cannot collapse to one layer per file |

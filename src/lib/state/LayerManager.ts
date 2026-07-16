@@ -69,13 +69,15 @@ export const DEFAULT_ENGINE: RenderEngine = 'maplibre-gl-raster';
 export const MAX_VRT_MEMBERS = 32;
 
 /** Separator between a layer id and its member index in per-member render layer
- * ids. Chosen so it cannot collide with `generateId`'s output. */
+ * ids. Chosen so it cannot collide with `generateId`'s output — but a
+ * caller-supplied id may contain it, so only the *last* occurrence marks the
+ * suffix these helpers added. */
 const MEMBER_ID_SEPARATOR = '::m';
 
 /** Strips the member suffix added by {@link memberLayerId}, yielding the id of
  * the owning RasterLayer. */
 function ownerLayerId(renderId: string): string {
-  const index = renderId.indexOf(MEMBER_ID_SEPARATOR);
+  const index = renderId.lastIndexOf(MEMBER_ID_SEPARATOR);
   return index === -1 ? renderId : renderId.slice(0, index);
 }
 
@@ -87,7 +89,7 @@ function memberLayerId(layerId: string, memberIndex: number): string {
 /** The member index encoded in a render-layer id, or null when the id belongs
  * to a plain (non-mosaic) layer. */
 function memberIndexOf(renderId: string): number | null {
-  const at = renderId.indexOf(MEMBER_ID_SEPARATOR);
+  const at = renderId.lastIndexOf(MEMBER_ID_SEPARATOR);
   if (at === -1) return null;
   const index = Number(renderId.slice(at + MEMBER_ID_SEPARATOR.length));
   return Number.isInteger(index) && index >= 0 ? index : null;

@@ -355,4 +355,41 @@ describe('LayerManager VRT on the cog-tiler-wasm engine', () => {
       expect(engineLayer.id.startsWith(id)).toBe(true);
     }
   });
+
+  it('routes member bounds back to a layer whose own id contains the separator', async () => {
+    // A caller-supplied id is free to look like a member id. Only the last
+    // separator marks the suffix the manager itself appended.
+    const { manager, map } = makeHarness({ engine: 'cog-tiler-wasm' });
+    const id = 'weird::m7';
+    await manager.addRaster(VRT_URL, { id });
+
+    const engineLayers = (
+      manager as unknown as { _cogRenderableLayers(): { id: string }[] }
+    )._cogRenderableLayers();
+    expect(engineLayers.map((l) => l.id)).toEqual([
+      'weird::m7::m0',
+      'weird::m7::m1',
+    ]);
+
+    const onBounds = (
+      manager as unknown as {
+        _onCogBounds(
+          id: string,
+          b: { west: number; south: number; east: number; north: number },
+          zoomTo: boolean,
+        ): void;
+      }
+    )._onCogBounds.bind(manager);
+    onBounds('weird::m7::m0', { west: -10, south: 0, east: 0, north: 10 }, true);
+    onBounds('weird::m7::m1', { west: 0, south: 0, east: 10, north: 10 }, true);
+
+    // Both members resolved to this layer and folded into its union.
+    expect(manager.getLayer(id)!.bounds).toEqual({
+      west: -10,
+      south: 0,
+      east: 10,
+      north: 10,
+    });
+    expect(map.fitBounds).toHaveBeenCalledTimes(1);
+  });
 });

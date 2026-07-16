@@ -63,8 +63,9 @@ const UNSUPPORTED_SOURCE_ELEMENTS = [
 ];
 
 /** `<ComplexSource>` children that transform sample values. A ComplexSource
- * carrying none of these is equivalent to a SimpleSource (gdalbuildvrt emits
- * one whenever `-srcnodata` is given), so it is accepted. */
+ * carrying none of these (and no `<UseMaskBand>`) is equivalent to a
+ * SimpleSource plus a nodata declaration — which is what gdalbuildvrt emits for
+ * `-srcnodata` — so it is accepted and its `<NODATA>` carried. */
 const COMPLEX_SOURCE_TRANSFORMS = [
   'LUT',
   'ScaleOffset',
@@ -223,9 +224,26 @@ function assertSupportedBand(band: Element, bandNumber: number): void {
   }
 }
 
-/** Rejects a `<ComplexSource>` that rescales sample values. */
+/** Rejects a `<ComplexSource>` that rescales sample values or masks them
+ * through a mask band. */
 function assertPlainSource(source: Element, bandNumber: number): void {
   if (source.tagName !== 'ComplexSource') return;
+
+  // Emitted by gdalbuildvrt whenever a source carries an internal mask band.
+  // GDAL applies the mask per source while compositing; we draw each source as
+  // its own layer with no per-source mask, so masked-out pixels would render as
+  // data.
+  if (firstChild(source, 'UseMaskBand')) {
+    throw new VrtUnsupportedError(
+      `Band ${bandNumber} of this VRT masks its sources through their mask ` +
+        'bands (<UseMaskBand>), which GDAL applies while compositing. Each ' +
+        'source is drawn on its own here, so the masks cannot be honoured and ' +
+        'masked-out pixels would render as data. Materialize the VRT first ' +
+        'with `gdal_translate mosaic.vrt mosaic.tif -of COG`, then load the ' +
+        'result.',
+    );
+  }
+
   for (const tag of COMPLEX_SOURCE_TRANSFORMS) {
     if (firstChild(source, tag)) {
       throw new VrtUnsupportedError(
@@ -236,6 +254,41 @@ function assertPlainSource(source: Element, bandNumber: number): void {
       );
     }
   }
+}
+
+/**
+ * The `<NODATA>` value a band's sources agree on, if any.
+ *
+ * A source's `<NODATA>` marks values in the *source* to skip while
+ * compositing, which is exactly what this renderer needs: members are drawn
+ * directly, so the value to mask is the one in their pixels. It is therefore
+ * preferred over the band's `<NoDataValue>`, which describes the VRT's own
+ * output (`gdalbuildvrt -srcnodata 255 -vrtnodata 0` makes them differ).
+ *
+ * Members share one nodata setting, so sources that disagree cannot be
+ * honoured.
+ *
+ * @throws {VrtUnsupportedError} When sources declare different values
+ */
+function readSourceNodata(sources: Element[], bandNumber: number): number | null {
+  const declared = sources
+    .map((s) => firstChild(s, 'NODATA')?.textContent?.trim())
+    .filter((v): v is string => v != null && v !== '');
+  if (declared.length === 0) return null;
+
+  const distinct = [...new Set(declared)];
+  if (distinct.length > 1) {
+    throw new VrtUnsupportedError(
+      `Band ${bandNumber} of this VRT declares different <NODATA> values for ` +
+        `different sources (${distinct.join(', ')}). Every source is drawn ` +
+        'with the layer\'s single nodata setting here, so per-source nodata ' +
+        'cannot be honoured. Materialize the VRT first with `gdal_translate ' +
+        'mosaic.vrt mosaic.tif -of COG`, then load the result.',
+    );
+  }
+
+  const value = Number(distinct[0]);
+  return Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -266,9 +319,12 @@ function assertNaturalPlacement(
       }
     : null;
 
-  if (src && props) {
-    const fullX = numAttr(props, 'RasterXSize', NaN);
-    const fullY = numAttr(props, 'RasterYSize', NaN);
+  if (src) {
+    // A non-zero origin is a crop regardless of whether <SourceProperties>
+    // declares the full size; the size comparison needs it, so it only applies
+    // when present.
+    const fullX = props ? numAttr(props, 'RasterXSize', NaN) : NaN;
+    const fullY = props ? numAttr(props, 'RasterYSize', NaN) : NaN;
     const cropped =
       src.xOff !== 0 ||
       src.yOff !== 0 ||
@@ -322,12 +378,13 @@ function parseNodata(band: Element): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-/** The members a single `<VRTRasterBand>` is built from, in document order. */
+/** What a single `<VRTRasterBand>` is built from: its members in document
+ * order, plus the nodata its sources agree on (if any). */
 function readBandMembers(
   band: Element,
   bandNumber: number,
   vrtUrl: string,
-): VrtMember[] {
+): { members: VrtMember[]; sourceNodata: number | null } {
   assertSupportedBand(band, bandNumber);
 
   const sources = Array.from(band.children).filter(
@@ -341,7 +398,7 @@ function readBandMembers(
     );
   }
 
-  return sources.map((source) => {
+  const members = sources.map((source) => {
     assertPlainSource(source, bandNumber);
 
     const fileEl = firstChild(source, 'SourceFilename');
@@ -367,6 +424,11 @@ function readBandMembers(
     const dst = assertNaturalPlacement(source, bandNumber, filename.trim());
     return { url: resolveSourceUrl(filename, vrtUrl), dst };
   });
+
+  return {
+    members,
+    sourceNodata: readSourceNodata(sources, bandNumber),
+  };
 }
 
 /**
@@ -405,37 +467,51 @@ export function parseVrt(xml: string, vrtUrl: string): VrtMosaic {
     );
   }
 
-  // Read every band, then require they agree on the member list. Bands that
-  // disagree describe a per-band file set, which cannot collapse to "render
-  // each file as one layer".
+  // Read every band, then require they agree on the mosaic — same files, in the
+  // same order, at the same placement. Bands that disagree describe a per-band
+  // file set or a per-band layout, neither of which can collapse to "render
+  // each file once".
   const perBand = bands.map((band, i) => readBandMembers(band, i + 1, vrtUrl));
   const [first, ...rest] = perBand;
-  for (const [i, members] of rest.entries()) {
-    const sameLength = members.length === first.length;
-    const sameUrls =
-      sameLength && members.every((m, j) => m.url === first[j].url);
-    if (!sameUrls) {
+  const samePlacement = (a: VrtMember, b: VrtMember): boolean =>
+    a.url === b.url &&
+    a.dst.xOff === b.dst.xOff &&
+    a.dst.yOff === b.dst.yOff &&
+    // NaN sizes (no <DstRect>) compare equal to each other via Object.is.
+    Object.is(a.dst.xSize, b.dst.xSize) &&
+    Object.is(a.dst.ySize, b.dst.ySize);
+
+  for (const [i, { members }] of rest.entries()) {
+    const agrees =
+      members.length === first.members.length &&
+      members.every((m, j) => samePlacement(m, first.members[j]));
+    if (!agrees) {
       throw new VrtUnsupportedError(
-        `Band ${i + 2} of this VRT is built from a different set of files than ` +
-          'band 1. Only VRTs where every band reads the same mosaic of ' +
-          'sources are supported. Materialize this one first with ' +
-          '`gdal_translate mosaic.vrt mosaic.tif -of COG`, then load the ' +
-          'result.',
+        `Band ${i + 2} of this VRT is built from a different set of files (or ` +
+          'places them differently) than band 1. Only VRTs where every band ' +
+          'reads the same mosaic of sources are supported. Materialize this ' +
+          'one first with `gdal_translate mosaic.vrt mosaic.tif -of COG`, ' +
+          'then load the result.',
       );
     }
   }
 
   return {
-    members: first,
+    members: first.members,
     bandCount: bands.length,
-    nodata: parseNodata(bands[0]),
+    // A source's <NODATA> describes the values to skip in the member's own
+    // pixels, which is what gets rendered here; the band's <NoDataValue>
+    // describes the VRT's output and is only a fallback. gdalbuildvrt writes
+    // both and they usually agree, but `-srcnodata X -vrtnodata Y` makes them
+    // differ — and X is the one this renderer needs.
+    nodata: first.sourceNodata ?? parseNodata(bands[0]),
   };
 }
 
-/** True when `url` points at a `.vrt` (ignoring any query string). */
+/** True when `url` points at a `.vrt`, ignoring any query string or fragment.
+ * Works for relative URLs too, which have no scheme to key off. */
 export function isVrtUrl(url: string): boolean {
-  const path = url.includes('://') ? url.split('?')[0] : url;
-  return /\.vrt$/i.test(path);
+  return /\.vrt$/i.test(url.split(/[?#]/)[0]);
 }
 
 /** True when `file` is a `.vrt` by name. */

@@ -169,13 +169,12 @@ export class PixelInspector {
    * `readPixelValues` resolves null when the point falls outside an image's
    * pixel grid, which is the authoritative test — a mosaic member's bounds only
    * bound its extent, and the point can still miss its grid (or land on a
-   * member that has not reported bounds yet). Candidates are tried in order and
-   * the first hit wins, matching how GDAL resolves overlapping VRT sources:
-   * later sources paint over earlier ones, so the *last* covering source is the
-   * visible one — but overlapping members are rejected in practice, since
-   * `parseVrt` only accepts sources placed at their natural position.
+   * member that has not reported bounds yet). So candidates are tried in order
+   * and the first hit wins. {@link imagesAt} hands them over topmost first,
+   * which is what makes that correct where members overlap: the reported value
+   * is the one actually drawn at the click.
    *
-   * @returns The first reading, or null when no candidate covers the point
+   * @returns The topmost reading, or null when no candidate covers the point
    */
   private async _readFirst(
     images: GeoTIFF[],

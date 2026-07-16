@@ -214,7 +214,8 @@ describe('PixelInspector', () => {
       // its pixel grid, which readPixelValues reports as null.
       const { map, emit } = makeFakeMap();
       const { target, west, east } = makeMosaicTarget();
-      target.members![0].bounds = null; // not yet reported → stays a candidate
+      // Not yet reported → stays a candidate rather than being skipped.
+      target.members![0].bounds = null;
       const readPixelValues = vi
         .fn()
         .mockResolvedValueOnce(null)
@@ -228,9 +229,39 @@ describe('PixelInspector', () => {
       emit('click', click(5, 5));
       await flush();
 
+      // Topmost first: the later member is tried before the earlier one.
       expect(readPixelValues).toHaveBeenCalledTimes(2);
-      expect(readPixelValues.mock.calls[0][0]).toBe(west);
-      expect(readPixelValues.mock.calls[1][0]).toBe(east);
+      expect(readPixelValues.mock.calls[0][0]).toBe(east);
+      expect(readPixelValues.mock.calls[1][0]).toBe(west);
+    });
+
+    it('reports the topmost member where two overlap', async () => {
+      // parseVrt rejects repositioning, not overlap — two sources at their
+      // natural positions can still cover the same point (adjacent scenes
+      // commonly do). LayerManager draws members in order, so the LAST one is
+      // what the user sees, and it is what the inspector must report.
+      const { map, emit } = makeFakeMap();
+      const under = { id: 'under' } as unknown as RasterLayer['geotiff'];
+      const over = { id: 'over' } as unknown as RasterLayer['geotiff'];
+      const target = makeTarget({
+        geotiff: under,
+        members: [
+          { url: 'under.tif', geotiff: under!, bounds: bounds(-10, 10) },
+          { url: 'over.tif', geotiff: over!, bounds: bounds(-10, 10) },
+        ],
+      });
+      const readPixelValues = vi.fn(async () => reading);
+      const insp = new PixelInspector(map, () => target, {
+        readPixelValues,
+        createPopup: makePopup,
+      });
+
+      insp.enable();
+      emit('click', click(5, 5));
+      await flush();
+
+      expect(readPixelValues).toHaveBeenCalledTimes(1);
+      expect(readPixelValues.mock.calls[0][0]).toBe(over);
     });
 
     it('reads nothing when the click falls outside every member', async () => {

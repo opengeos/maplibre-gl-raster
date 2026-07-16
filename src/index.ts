@@ -53,6 +53,8 @@ export { summarizeGeoTIFF } from './lib/raster/metadata';
 export {
   computeAutoStats,
   MAX_SAMPLE_TILES,
+  mergeAutoStats,
+  mergeBandStats,
   percentileFromHistogram,
   readBandNames,
 } from './lib/raster/stats';
