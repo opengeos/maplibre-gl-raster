@@ -13,12 +13,16 @@ const sampleValue = (band: number, pixel: number) => band * 100 + pixel;
 /** Build a fake decoded tile of `count` bands. With `layout: 'band-separate'`
  * each band is its own Float32 array; otherwise the data is pixel-interleaved
  * (band-contiguous within a pixel), the layout `extractBand` handles. */
-function fakeArray(count: number, layout: 'band-separate' | 'pixel') {
+function fakeArray(
+  count: number,
+  layout: 'band-separate' | 'pixel',
+  mask: Uint8Array | null = null,
+) {
   if (layout === 'band-separate') {
     const bands = Array.from({ length: count }, (_, b) =>
       Float32Array.from({ length: PIXELS }, (_, p) => sampleValue(b + 1, p)),
     );
-    return { layout: 'band-separate', bands, count, width: WIDTH, height: HEIGHT, nodata: null };
+    return { layout: 'band-separate', bands, count, width: WIDTH, height: HEIGHT, nodata: null, mask };
   }
   const data = new Float32Array(PIXELS * count);
   for (let p = 0; p < PIXELS; p++) {
@@ -26,33 +30,43 @@ function fakeArray(count: number, layout: 'band-separate' | 'pixel') {
       data[p * count + b] = sampleValue(b + 1, p);
     }
   }
-  return { layout: 'pixel', data, count, width: WIDTH, height: HEIGHT, nodata: null };
+  return { layout: 'pixel', data, count, width: WIDTH, height: HEIGHT, nodata: null, mask };
 }
 
-/** A device whose createTexture records the Float32 data it was handed, so a
- * test can assert which band's values landed in which texture. */
+/** A device whose createTexture records the data and format it was handed, so
+ * a test can assert which band's values landed in which texture and that the
+ * mask was uploaded as a single-channel `r8unorm` texture. */
 function recordingDevice() {
-  const created: { data: Float32Array }[] = [];
+  const created: { data: unknown; format?: string }[] = [];
   const device = {
-    createTexture: vi.fn((opts: { data: Float32Array }) => {
+    createTexture: vi.fn((opts: { data: unknown; format?: string }) => {
       const tex = { data: opts.data, destroy: vi.fn() } as unknown as Texture;
-      created.push({ data: opts.data });
+      created.push({ data: opts.data, format: opts.format });
       return tex;
     }),
   } as unknown as Device;
   return { device, created };
 }
 
-function fakeImage(count: number, layout: 'band-separate' | 'pixel') {
+function fakeImage(
+  count: number,
+  layout: 'band-separate' | 'pixel',
+  mask: Uint8Array | null = null,
+) {
   return {
-    fetchTile: vi.fn(async () => ({ array: fakeArray(count, layout) })),
+    fetchTile: vi.fn(async () => ({ array: fakeArray(count, layout, mask) })),
   };
 }
 
-async function load(bands: number[], count: number, layout: 'band-separate' | 'pixel') {
+async function load(
+  bands: number[],
+  count: number,
+  layout: 'band-separate' | 'pixel',
+  mask: Uint8Array | null = null,
+) {
   const loader = makeMultiBandTileLoader(bands);
   const { device, created } = recordingDevice();
-  const image = fakeImage(count, layout);
+  const image = fakeImage(count, layout, mask);
   const result = await loader(
     image as never,
     { device, x: 0, y: 0, signal: undefined } as unknown as GetTileDataOptions,
@@ -88,5 +102,20 @@ describe('makeMultiBandTileLoader', () => {
   it('fetches the tile only once regardless of how many bands are requested', async () => {
     const { image } = await load([1, 5, 9], 12, 'band-separate');
     expect(image.fetchTile).toHaveBeenCalledTimes(1);
+  });
+
+  it('uploads the internal validity mask as a single-channel r8unorm texture', async () => {
+    // 0 = masked/nodata, non-zero = valid — mirrors a per-dataset mask IFD.
+    const mask = new Uint8Array([0, 255]);
+    const { result, created } = await load([1, 2, 3], 3, 'pixel', mask);
+    expect(result.maskTexture).not.toBeNull();
+    const maskUpload = created.find((c) => c.format === 'r8unorm');
+    expect(maskUpload?.data).toBe(mask);
+  });
+
+  it('leaves maskTexture null when the source declares no mask IFD', async () => {
+    const { result, created } = await load([1, 2, 3], 3, 'pixel');
+    expect(result.maskTexture).toBeNull();
+    expect(created.some((c) => c.format === 'r8unorm')).toBe(false);
   });
 });
