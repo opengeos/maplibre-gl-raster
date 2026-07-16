@@ -21,6 +21,11 @@ const SAMPLE_COGS = [
     url: 'https://data.source.coop/giswqs/gebco-bathymetry/gebco_2026/gebco_2026.tif',
     attribution: 'GEBCO Compilation Group (2026)',
   },
+  {
+    label: 'NAIP aerial imagery (mosaic VRT)',
+    url: 'https://data.source.coop/giswqs/opengeos/naip_water_train.vrt',
+    attribution: 'USDA National Agriculture Imagery Program (NAIP)',
+  },
 ];
 
 // Create map
