@@ -22,6 +22,14 @@ export type { RasterLayer } from './lib/state/RasterLayer';
 // Raster utilities for advanced use
 export { loadGeoTIFF } from './lib/raster/load-geotiff';
 export {
+  isVrtFile,
+  isVrtUrl,
+  loadVrt,
+  parseVrt,
+  VrtUnsupportedError,
+} from './lib/raster/vrt';
+export type { VrtMember, VrtMosaic } from './lib/raster/vrt';
+export {
   isKnownColormap,
   loadColormapSprite,
   sampleColormapStops,
@@ -45,6 +53,8 @@ export { summarizeGeoTIFF } from './lib/raster/metadata';
 export {
   computeAutoStats,
   MAX_SAMPLE_TILES,
+  mergeAutoStats,
+  mergeBandStats,
   percentileFromHistogram,
   readBandNames,
 } from './lib/raster/stats';

@@ -111,6 +111,9 @@ export interface RasterLayerInfo {
   name: string;
   /** Data source. */
   source: RasterLayerSource;
+  /** For a layer loaded from a mosaic VRT, the member COG URLs it expanded to
+   * (in VRT source order); null for a plain single-file raster. */
+  memberUrls: string[] | null;
   /** Band count, known once the GeoTIFF header loads. */
   bandCount: number | null;
   /** 1-indexed band names parsed from GDAL_METADATA, when present. */
