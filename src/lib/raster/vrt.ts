@@ -107,17 +107,20 @@ function numAttr(el: Element, name: string, fallback: number): number {
 /**
  * Resolves a `<SourceFilename>` to an absolute http(s) URL.
  *
+ * The element's `relativeToVRT` attribute is deliberately not consulted. It
+ * distinguishes "relative to the .vrt" (`1`) from "relative to GDAL's working
+ * directory" (`0`), and a browser has no working directory — so the VRT's own
+ * location is the only resolution available for either. That is also the right
+ * answer for the overwhelmingly common case of sources sitting beside the VRT.
+ * Paths that are meaningful only on the authoring machine are rejected below
+ * rather than silently resolved against the wrong base.
+ *
  * @param filename - Raw text content of the element
- * @param relativeToVrt - Value of the `relativeToVRT` attribute
  * @param vrtUrl - URL the VRT itself was loaded from
  * @returns An absolute http(s) URL
  * @throws {VrtUnsupportedError} When the path cannot be read from a browser
  */
-function resolveSourceUrl(
-  filename: string,
-  relativeToVrt: boolean,
-  vrtUrl: string,
-): string {
+function resolveSourceUrl(filename: string, vrtUrl: string): string {
   let raw = filename.trim();
   if (!raw) {
     throw new VrtUnsupportedError('This VRT has an empty <SourceFilename>.');
@@ -160,11 +163,6 @@ function resolveSourceUrl(
     );
   }
 
-  // relativeToVRT="0" with a bare relative path means "relative to GDAL's
-  // working directory". We have no better guess than the VRT's own location,
-  // which is also what it resolves to for the (overwhelmingly common) case of
-  // sources sitting beside the VRT.
-  void relativeToVrt;
   return new URL(raw, vrtUrl).href;
 }
 
@@ -353,7 +351,6 @@ function readBandMembers(
       );
     }
     const filename = fileEl.textContent ?? '';
-    const relativeToVrt = fileEl.getAttribute('relativeToVRT') === '1';
 
     // Each member is loaded as a whole COG and its bands read by index, so a
     // band that pulls from a different band of the source cannot be honoured.
@@ -368,7 +365,7 @@ function readBandMembers(
     }
 
     const dst = assertNaturalPlacement(source, bandNumber, filename.trim());
-    return { url: resolveSourceUrl(filename, relativeToVrt, vrtUrl), dst };
+    return { url: resolveSourceUrl(filename, vrtUrl), dst };
   });
 }
 
