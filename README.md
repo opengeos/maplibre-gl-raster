@@ -10,6 +10,7 @@ A MapLibre GL JS plugin for visualizing local and remote raster datasets (GeoTIF
 ## Features
 
 - **Local and remote rasters** - Load Cloud Optimized GeoTIFFs from any CORS-enabled URL, or drag-and-drop local GeoTIFF files
+- **Mosaic VRTs** - Load a `.vrt` that mosaics COGs; its sources are rendered as one layer with a single shared stretch ([details and limits](#mosaic-vrt-support))
 - **Multiple layers** - Layer list with visibility toggles, reordering, zoom-to, and per-layer settings
 - **GPU rendering pipeline** - Band compositing, per-band rescale, 90+ colormaps, nodata filtering, linear/sqrt/log stretch, and gamma correction as deck.gl shader modules; parameter changes re-render without re-fetching tiles
 - **Auto statistics** - Per-band min/max and histograms sampled from COG overviews (or GDAL metadata), with draggable histogram handles for the rescale range
@@ -121,9 +122,9 @@ The main control class implementing MapLibre's `IControl` interface.
 
 #### Raster Methods
 
-- `addRaster(source, options?)` - Add a raster from a COG URL (`string`) or a local GeoTIFF `File`; resolves with the layer id
+- `addRaster(source, options?)` - Add a raster from a COG or [mosaic `.vrt`](#mosaic-vrt-support) URL (`string`), or a local GeoTIFF `File`; resolves with the layer id
 - `removeRaster(id)` - Remove a raster layer
-- `getRaster(id)` / `getRasters()` - Get layer snapshots (`RasterLayerInfo`)
+- `getRaster(id)` / `getRasters()` - Get layer snapshots (`RasterLayerInfo`); for a mosaic VRT, `memberUrls` lists the COGs it expanded to
 - `setRasterState(id, patch)` - Update visualization state (mode, bands, rescale, colormap, reversed, nodata, opacity, gamma, stretch, visible)
 - `setVisible(id, visible)` - Show / hide a layer
 - `selectRaster(id | null)` - Choose which layer the panel's settings edit
@@ -311,7 +312,10 @@ decimal places; omit for a compact auto format), `barLength?` /
 The package also exports lower-level building blocks for advanced use:
 
 - `loadGeoTIFF(url)` - Open a (CORS-safe) GeoTIFF from a URL or blob URL
+- `parseVrt(xml, vrtUrl)` / `loadVrt(url, signal?)` - Parse a [mosaic VRT](#mosaic-vrt-support) into its member COG URLs; throws `VrtUnsupportedError` for a VRT that needs GDAL
+- `isVrtUrl(url)` / `isVrtFile(file)` - Detect a `.vrt` by name
 - `computeAutoStats(tiff, signal, onProgress?)` - Per-band min/max + histograms
+- `mergeAutoStats(perImage)` / `mergeBandStats(perImage)` - Merge stats sampled from several images onto one range (how a mosaic VRT gets a shared stretch)
 - `summarizeGeoTIFF(tiff)` - Image / CRS / band / GDAL metadata summary
 - `readBandNames(tiff)` / `percentileFromHistogram(stats, p)`
 - `COLORMAP_NAMES` / `COLORMAP_OPTIONS` / `colormapsPngUrl`
@@ -319,9 +323,46 @@ The package also exports lower-level building blocks for advanced use:
 - `autoRangeFor(stats)` / `statsForBand(autoStats, band)` - resolve a band's effective rescale range
 - `clamp`, `formatNumericValue`, `generateId`, `debounce`, `throttle`, `classNames`
 
+## Mosaic VRT support
+
+A `.vrt` is not raster data: it is a GDAL XML manifest describing how to assemble other files. GDAL is not available in the browser, so only the subset that can be honoured without it is supported — **a VRT that mosaics COGs**, which is what `gdalbuildvrt` emits:
+
+```bash
+gdalbuildvrt mosaic.vrt tile_*.tif   # then load mosaic.vrt by URL
+```
+
+Each source is loaded as its own COG and rendered as its own tiled layer, georeferenced by its own headers. They appear as **one layer** in the panel: one set of settings, one rescale window, one colorbar. Auto statistics are sampled from every member and merged, so the shared stretch describes the whole mosaic rather than whichever tile happened to be first.
+
+Sources may be relative to the `.vrt`, absolute `https://` URLs, or `/vsicurl/https://…`. Every one must be a CORS-enabled COG.
+
+### What is not supported
+
+Anything that needs GDAL's pixel machinery is **rejected with an actionable error** rather than rendered approximately — a mis-placed or silently rescaled raster is worse than a clear failure:
+
+| Rejected | Because |
+| --- | --- |
+| Warped VRTs (`subClass="VRTWarpedDataset"`, i.e. `gdalwarp -of VRT`) | Reprojects/resamples on the fly |
+| Pixel functions (`VRTDerivedRasterBand`) | Runs inside GDAL |
+| `<LUT>`, `<ScaleRatio>`, `<ScaleOffset>`, `<Exponent>` | Rescales sample values |
+| `<KernelFilteredSource>`, `<AveragedSource>` | Composites pixels |
+| Cropped (`<SrcRect>` sub-window) or rescaled (`<DstRect>` ≠ `<SrcRect>`) sources | Members are drawn from their own georeferencing, so the VRT's placement cannot be honoured |
+| Band remapping (`<SourceBand>` ≠ band number) | Band N is read from band N of each member |
+| Bands built from different file sets | Cannot collapse to one layer per file |
+| `/vsis3/`, `/vsizip/`, … (any handler but `/vsicurl/`) | Needs GDAL driver config the browser cannot reconstruct |
+| Local absolute paths, or relative paths in a **dropped** `.vrt` | A local `.vrt` has no readable directory in the browser, so its siblings on disk cannot be found. Load it from a URL, or use absolute URLs |
+| More than 32 sources | Each becomes its own tiled layer with its own tile cache; a large mosaic would exhaust the browser |
+
+For any of these, materialize the VRT first and load the result:
+
+```bash
+gdal_translate mosaic.vrt mosaic.tif -of COG   # or gdalwarp, for a warped VRT
+```
+
 ## CORS requirements for remote COGs
 
 Remote COGs must be served with CORS enabled (`Access-Control-Allow-Origin`). The loader includes a workaround for buckets that do not expose `Content-Range` via `Access-Control-Expose-Headers`, so most public S3/R2 buckets work out of the box.
+
+A mosaic VRT multiplies the number of concurrent range requests by its member count. Hosts that throttle or intermittently fail under that load return error responses without CORS headers, which the browser reports as CORS failures and which show up as missing tiles.
 
 ## Build a GeoLibre plugin zip
 

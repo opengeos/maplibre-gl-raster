@@ -24,6 +24,7 @@ import {
 } from '../raster/render-pipeline';
 import {
   computeAutoStats as defaultComputeAutoStats,
+  mergeAutoStats,
   readBandNames,
   type AutoStats,
 } from '../raster/stats';
@@ -33,6 +34,13 @@ import {
   type MultiBandTileData,
 } from '../raster/tile-loader';
 import { WebMercatorCOGLayer } from '../raster/web-mercator-cog-layer';
+import {
+  isVrtFile,
+  isVrtUrl,
+  loadVrt as defaultLoadVrt,
+  VrtUnsupportedError,
+  type VrtMosaic,
+} from '../raster/vrt';
 import { generateId } from '../utils/helpers';
 import {
   CogTilerEngine,
@@ -44,10 +52,85 @@ import {
   deriveLayerName,
   type GeographicBounds,
   type RasterLayer,
+  type RasterMember,
 } from './RasterLayer';
 
 /** Default engine when none is configured: the deck.gl GPU pipeline. */
 export const DEFAULT_ENGINE: RenderEngine = 'maplibre-gl-raster';
+
+/**
+ * Most member COGs a mosaic VRT may expand to.
+ *
+ * Every member becomes its own tiled layer with its own tile cache and its own
+ * stream of range requests, so a large mosaic (a country-scale VRT can list
+ * hundreds of tiles) would exhaust the browser rather than draw slowly. Failing
+ * with a message that names the fix is more useful than hanging the page.
+ */
+export const MAX_VRT_MEMBERS = 32;
+
+/** Separator between a layer id and its member index in per-member render layer
+ * ids. Chosen so it cannot collide with `generateId`'s output. */
+const MEMBER_ID_SEPARATOR = '::m';
+
+/** Strips the member suffix added by {@link memberLayerId}, yielding the id of
+ * the owning RasterLayer. */
+function ownerLayerId(renderId: string): string {
+  const index = renderId.indexOf(MEMBER_ID_SEPARATOR);
+  return index === -1 ? renderId : renderId.slice(0, index);
+}
+
+/** Render-layer id for one member of a mosaic layer. */
+function memberLayerId(layerId: string, memberIndex: number): string {
+  return `${layerId}${MEMBER_ID_SEPARATOR}${memberIndex}`;
+}
+
+/** The member index encoded in a render-layer id, or null when the id belongs
+ * to a plain (non-mosaic) layer. */
+function memberIndexOf(renderId: string): number | null {
+  const at = renderId.indexOf(MEMBER_ID_SEPARATOR);
+  if (at === -1) return null;
+  const index = Number(renderId.slice(at + MEMBER_ID_SEPARATOR.length));
+  return Number.isInteger(index) && index >= 0 ? index : null;
+}
+
+/** The smallest bounds containing all of `bounds`. */
+function unionBounds(bounds: GeographicBounds[]): GeographicBounds | null {
+  if (bounds.length === 0) return null;
+  return bounds.reduce((acc, b) => ({
+    west: Math.min(acc.west, b.west),
+    south: Math.min(acc.south, b.south),
+    east: Math.max(acc.east, b.east),
+    north: Math.max(acc.north, b.north),
+  }));
+}
+
+/**
+ * Rejects a GeoTIFF that cannot be streamed as map tiles.
+ *
+ * Both rendering engines stream tiles on demand, so the source must be a tiled
+ * Cloud-Optimized GeoTIFF. A striped GeoTIFF (common for files exported from
+ * desktop GIS) has no tile grid: the deck.gl path throws 'Tiff is not tiled'
+ * deep inside an un-awaited parse step, which surfaces only as a console error
+ * while the layer renders blank with a default [0, 1] rescale window. Detect it
+ * up front and fail the layer with an actionable message instead. See
+ * opengeos/GeoLibre#789.
+ *
+ * @param tiff - The loaded header
+ * @param label - Source description for the message; omit for the layer's own
+ *   file, pass a member URL when checking a VRT source
+ */
+function assertTiled(tiff: GeoTIFF, label?: string): void {
+  if (tiff.isTiled) return;
+  const subject = label
+    ? `The VRT source "${label}" is striped, not tiled,`
+    : 'This GeoTIFF is striped, not tiled,';
+  throw new Error(
+    `${subject} so it cannot be streamed as map tiles. Convert it to a tiled ` +
+      'Cloud-Optimized GeoTIFF (COG) first, for example with `rio cogeo ' +
+      'create input.tif output.tif` or `gdal_translate input.tif output.tif ' +
+      '-of COG`, then load the result.',
+  );
+}
 
 /**
  * Clamps a bounds' latitudes to the valid WGS84 range. GeoTIFF bounds are
@@ -192,6 +275,8 @@ export interface OverlayLike {
  * WebGL is touched under jsdom. */
 export interface LayerManagerDeps {
   loadGeoTIFF: (url: string) => Promise<GeoTIFF>;
+  /** Fetches and parses a mosaic VRT into the member COGs to render. */
+  loadVrt: (url: string, signal?: AbortSignal) => Promise<VrtMosaic>;
   computeAutoStats: (
     tiff: GeoTIFF,
     signal: AbortSignal,
@@ -221,6 +306,7 @@ export interface LayerManagerDeps {
 
 const DEFAULT_DEPS: LayerManagerDeps = {
   loadGeoTIFF: defaultLoadGeoTIFF,
+  loadVrt: defaultLoadVrt,
   computeAutoStats: defaultComputeAutoStats,
   epsgResolver: createResilientEpsgResolver(),
   // Resolved lazily: the package is an optional peer dependency, only loaded
@@ -374,6 +460,7 @@ export class LayerManager {
         options?.state?.mode !== undefined ||
         options?.state?.bands !== undefined,
       geotiff: null,
+      members: null,
       autoStats: null,
       bandCount: null,
       bandNames: null,
@@ -394,32 +481,26 @@ export class LayerManager {
     this._emit({ type: 'rasteradd', layerId: layer.id });
 
     try {
-      const tiff = await this._deps.loadGeoTIFF(url);
-      if (this._destroyed || !this.getLayer(layer.id)) return layer.id;
-      // Both rendering engines stream tiles on demand, so the source must be a
-      // tiled Cloud-Optimized GeoTIFF. A striped GeoTIFF (common for files
-      // exported from desktop GIS) has no tile grid: the deck.gl path throws
-      // 'Tiff is not tiled' deep inside an un-awaited parse step, which surfaces
-      // only as a console error while the layer renders blank with a default
-      // [0, 1] rescale window. Detect it up front and fail the layer with an
-      // actionable message instead. See opengeos/GeoLibre#789.
-      if (!tiff.isTiled) {
-        throw new Error(
-          'This GeoTIFF is striped, not tiled, so it cannot be streamed as ' +
-            'map tiles. Convert it to a tiled Cloud-Optimized GeoTIFF (COG) ' +
-            'first, for example with `rio cogeo create input.tif output.tif` ' +
-            'or `gdal_translate input.tif output.tif -of COG`, then load the ' +
-            'result.',
-        );
+      // A .vrt is a manifest, not raster data: expand it into its member COGs.
+      // Everything downstream reads the first member, which the expansion
+      // requires every other member to agree with (see _openVrt).
+      if (isFile ? isVrtFile(source) : isVrtUrl(source)) {
+        await this._openVrt(layer, url);
+      } else {
+        const tiff = await this._deps.loadGeoTIFF(url);
+        if (this._destroyed || !this.getLayer(layer.id)) return layer.id;
+        assertTiled(tiff);
+        layer.geotiff = tiff;
+        layer.bandCount = tiff.count;
       }
-      layer.geotiff = tiff;
-      layer.bandCount = tiff.count;
+      if (this._destroyed || !this.getLayer(layer.id)) return layer.id;
+      const tiff = layer.geotiff!;
       layer.bandNames = readBandNames(tiff);
       layer.palette = extractPalette(tiff);
       layer.loading = false;
       if (!layer.userPickedMode) {
         // 1 or 2 bands → single + colormap. RGB on 2 bands leaves blue empty.
-        if (tiff.count >= 3) {
+        if (layer.bandCount! >= 3) {
           layer.state.mode = 'rgb';
           layer.state.bands = [1, 2, 3];
         } else {
@@ -443,6 +524,86 @@ export class LayerManager {
         this._emit({ type: 'rasterchange', layerId: layer.id });
       }
       throw error;
+    }
+  }
+
+  /**
+   * Expands a mosaic VRT into the member COGs the layer renders.
+   *
+   * Populates `layer.members` plus the band metadata the rest of the manager
+   * reads. Band count comes from the VRT (not from the member headers) so a
+   * VRT that exposes a subset of its sources' bands still shows what it
+   * declares; members are required to carry at least that many bands, since
+   * every band N is read from band N of each member (`parseVrt` rejects any
+   * VRT that remaps bands).
+   *
+   * @param layer - The layer being added; mutated in place
+   * @param url - URL the `.vrt` is fetched from
+   * @throws {VrtUnsupportedError} When the VRT needs GDAL to render
+   */
+  private async _openVrt(layer: RasterLayer, url: string): Promise<void> {
+    const mosaic = await this._deps.loadVrt(url, layer.abort.signal);
+    if (this._destroyed || !this.getLayer(layer.id)) return;
+
+    if (mosaic.members.length > MAX_VRT_MEMBERS) {
+      throw new VrtUnsupportedError(
+        `This VRT mosaics ${mosaic.members.length} files. Each one is drawn as ` +
+          `its own tiled layer here, and more than ${MAX_VRT_MEMBERS} would ` +
+          'overwhelm the browser. Merge it into a single Cloud-Optimized ' +
+          'GeoTIFF first with `gdal_translate mosaic.vrt mosaic.tif -of COG`, ' +
+          'then load that.',
+      );
+    }
+
+    // Members are independent HTTP reads; fetch the headers concurrently. The
+    // count is bounded by MAX_VRT_MEMBERS above.
+    const tiffs = await Promise.all(
+      mosaic.members.map(async (member) => {
+        try {
+          return await this._deps.loadGeoTIFF(member.url);
+        } catch (cause) {
+          const detail = cause instanceof Error ? cause.message : String(cause);
+          const error = new Error(
+            `This VRT references "${member.url}", which could not be loaded ` +
+              `(${detail}). Every source must be a CORS-enabled Cloud-` +
+              'Optimized GeoTIFF reachable from the browser.',
+          );
+          // Preserve the underlying cause without relying on the ErrorOptions
+          // constructor argument (not in this project's TS lib target).
+          if (cause instanceof Error) {
+            (error as { cause?: unknown }).cause = cause;
+          }
+          throw error;
+        }
+      }),
+    );
+    if (this._destroyed || !this.getLayer(layer.id)) return;
+
+    const members: RasterMember[] = mosaic.members.map((member, i) => ({
+      url: member.url,
+      geotiff: tiffs[i],
+      bounds: null,
+    }));
+
+    for (const member of members) {
+      assertTiled(member.geotiff, member.url);
+      if (member.geotiff.count < mosaic.bandCount) {
+        throw new VrtUnsupportedError(
+          `This VRT declares ${mosaic.bandCount} band(s), but its source ` +
+            `"${member.url}" has only ${member.geotiff.count}. Every source ` +
+            'must supply every band the VRT exposes.',
+        );
+      }
+    }
+
+    layer.members = members;
+    layer.geotiff = members[0].geotiff;
+    layer.bandCount = mosaic.bandCount;
+    // The VRT is the dataset-level authority on nodata: honour its declaration
+    // when the caller left nodata on 'auto' (which otherwise reads whatever the
+    // individual members happen to declare, if anything).
+    if (mosaic.nodata !== null && layer.state.nodata === 'auto') {
+      layer.state.nodata = mosaic.nodata;
     }
   }
 
@@ -669,15 +830,31 @@ export class LayerManager {
     bounds: GeographicBounds,
     zoomTo: boolean,
   ): void {
-    const layer = this.getLayer(id);
+    // Prefer an exact match: a caller-supplied layer id is free to contain the
+    // member separator, and it must not be mistaken for a member of some other
+    // layer.
+    const layer = this.getLayer(id) ?? this.getLayer(ownerLayerId(id));
     if (!layer) return;
+    const clamped = clampBoundsLatitude(bounds);
+
+    // A mosaic layer's sources report one id per member; fold them into the
+    // union rather than letting the last one to arrive win.
+    const memberIndex = memberIndexOf(id);
+    if (layer.members && memberIndex !== null) {
+      const member = layer.members[memberIndex];
+      // zoomTo is derived from layer.zoomTo per member, and _onMemberBounds
+      // re-checks it before fitting the union, so it needs no separate gate.
+      if (member) this._onMemberBounds(layer, member, clamped);
+      return;
+    }
+
     const boundsArrived = !layer.bounds;
-    layer.bounds = clampBoundsLatitude(bounds);
+    layer.bounds = clamped;
     if (zoomTo && layer.zoomTo) {
       layer.zoomTo = false;
       this._fitBounds(layer.bounds);
     }
-    if (boundsArrived) this._emit({ type: 'rasterchange', layerId: id });
+    if (boundsArrived) this._emit({ type: 'rasterchange', layerId: layer.id });
   }
 
   /** Surfaces a cog-tiler open / module-load failure as a layer (or global)
@@ -685,30 +862,50 @@ export class LayerManager {
   private _onCogError(id: string | undefined, error: Error): void {
     if (this._destroyed) return;
     if (id) {
-      const layer = this.getLayer(id);
+      // A member's failure is the owning layer's failure. Prefer an exact
+      // match: a caller-supplied id may itself contain the member separator.
+      const layerId = this.getLayer(id) ? id : ownerLayerId(id);
+      const layer = this.getLayer(layerId);
       if (layer) {
         layer.loading = false;
         layer.error = error;
       }
-      this._emit({ type: 'error', layerId: id, error });
-      this._emit({ type: 'rasterchange', layerId: id });
+      this._emit({ type: 'error', layerId, error });
+      this._emit({ type: 'rasterchange', layerId });
     } else {
       this._emit({ type: 'error', error });
     }
   }
 
-  /** Projects the renderable layers into the cog-tiler engine's input shape. */
+  /**
+   * Projects the renderable layers into the cog-tiler engine's input shape.
+   *
+   * A mosaic VRT contributes one entry per member — the engine opens a
+   * {@link import('cog-tiler-wasm').CogSource} per entry — all carrying the
+   * owning layer's shared state and statistics. Members are always read from
+   * their URL: a VRT dropped as a local File can only reference absolute URLs
+   * anyway (`parseVrt` rejects relative sources for a local VRT, since the
+   * browser cannot reach its siblings on disk).
+   */
   private _cogRenderableLayers(): CogEngineLayer[] {
     return this._layers
       .filter((l) => l.geotiff && l.state.visible && !this._crsFailed.has(l.id))
-      .map((l) => ({
-        id: l.id,
-        source: l.file ?? l.url,
-        state: l.state,
-        autoStats: l.autoStats,
-        beforeId: l.beforeId,
-        zoomTo: l.zoomTo,
-      }));
+      .flatMap((l) => {
+        const shared = {
+          state: l.state,
+          autoStats: l.autoStats,
+          beforeId: l.beforeId,
+          zoomTo: l.zoomTo,
+        };
+        if (!l.members) {
+          return [{ id: l.id, source: l.file ?? l.url, ...shared }];
+        }
+        return l.members.map((member, i) => ({
+          id: memberLayerId(l.id, i),
+          source: member.url,
+          ...shared,
+        }));
+      });
   }
 
   /** Fetch + decode the colormap sprite once per device, then re-render so
@@ -729,25 +926,40 @@ export class LayerManager {
     }
   }
 
+  /**
+   * Samples the layer's auto statistics in the background, re-rendering when
+   * they land.
+   *
+   * A mosaic VRT samples every member and merges the results, so the one
+   * rescale window the members share describes the whole mosaic. Sampling only
+   * the first member would still give a single window — but one derived from a
+   * single tile, which clips every member whose values fall outside it. The
+   * per-tile progress callback is skipped for a mosaic: members would each
+   * report partials against their own range and fight over the window.
+   */
   private _computeStats(layer: RasterLayer): void {
     if (!layer.geotiff) return;
     const signal = layer.abort.signal;
+    const apply = (stats: AutoStats): void => {
+      if (signal.aborted || this._destroyed) return;
+      layer.autoStats = stats;
+      this._rebuild();
+      this._emit({ type: 'rasterchange', layerId: layer.id });
+    };
     void (async () => {
       try {
-        const stats = await this._deps.computeAutoStats(
-          layer.geotiff!,
-          signal,
-          (partial) => {
-            if (signal.aborted || this._destroyed) return;
-            layer.autoStats = partial;
-            this._rebuild();
-            this._emit({ type: 'rasterchange', layerId: layer.id });
-          },
+        if (layer.members) {
+          const perMember = await Promise.all(
+            layer.members.map((member) =>
+              this._deps.computeAutoStats(member.geotiff, signal),
+            ),
+          );
+          apply(mergeAutoStats(perMember));
+          return;
+        }
+        apply(
+          await this._deps.computeAutoStats(layer.geotiff!, signal, apply),
         );
-        if (signal.aborted || this._destroyed) return;
-        layer.autoStats = stats;
-        this._rebuild();
-        this._emit({ type: 'rasterchange', layerId: layer.id });
       } catch {
         // Stats are an enhancement; rendering falls back to [0, 1] rescale.
       }
@@ -853,19 +1065,52 @@ export class LayerManager {
     if (!this._overlay) return;
     const layers = this._layers
       .filter((l) => l.geotiff && l.state.visible && !this._crsFailed.has(l.id))
-      .map((l) => this._buildCogLayer(l));
+      .flatMap((l) => this._buildCogLayers(l));
     this._overlay.setProps({ layers });
   }
 
-  private _buildCogLayer(layer: RasterLayer): COGLayer<MultiBandTileData> {
-    const renderTile = this._renderTileFor(layer);
+  /**
+   * The deck.gl layers that draw one managed layer: exactly one for a plain
+   * raster, and one per member for a mosaic VRT.
+   *
+   * Every member layer is built from the same {@link RasterLayer}, so they
+   * share one visualization state and one set of auto statistics — which is
+   * what keeps a mosaic from rendering as a quilt of independently stretched
+   * tiles.
+   */
+  private _buildCogLayers(layer: RasterLayer): COGLayer<MultiBandTileData>[] {
+    // Build the render pipeline once and hand the same one to every member:
+    // besides being what "shared state" means here, _renderTileFor has a side
+    // effect (it lazily uploads the palette texture, and reports a failure as a
+    // layer error), which must not run once per member.
+    //
     // Fetch only the bands this layer's render pipeline samples, so any band
     // (e.g. band 12 of a 12-band image) can be displayed — not just the first
     // four. The id encodes the band set so a band change remounts the layer and
     // refetches (see cogLayerId); within a set the loader closure's identity is
     // irrelevant (the inner TileLayer ignores getTileData changes).
     const fetchBands = fetchBandsFor(layer);
-    const getTileData = makeMultiBandTileLoader(fetchBands);
+    const pipeline = {
+      renderTile: this._renderTileFor(layer),
+      fetchBands,
+      getTileData: makeMultiBandTileLoader(fetchBands),
+    };
+    if (!layer.members) return [this._buildCogLayer(layer, pipeline)];
+    return layer.members.map((member, i) =>
+      this._buildCogLayer(layer, pipeline, { member, index: i }),
+    );
+  }
+
+  private _buildCogLayer(
+    layer: RasterLayer,
+    pipeline: {
+      renderTile: ReturnType<LayerManager['_renderTileFor']>;
+      fetchBands: number[];
+      getTileData: ReturnType<typeof makeMultiBandTileLoader>;
+    },
+    member?: { member: RasterMember; index: number },
+  ): COGLayer<MultiBandTileData> {
+    const { renderTile, fetchBands, getTileData } = pipeline;
 
     // beforeId is read by @deck.gl/mapbox's MapboxOverlay in interleaved
     // mode but missing from COGLayer's narrower props type — build the props
@@ -873,8 +1118,10 @@ export class LayerManager {
     // excess-property check. Only forward ids that exist in the current
     // style; a stale id would make the overlay throw on the next style event.
     const cogProps = {
-      id: cogLayerId(layer, fetchBands),
-      geotiff: layer.geotiff!,
+      id: member
+        ? `${memberLayerId(layer.id, member.index)}#b${fetchBands.join('-')}`
+        : cogLayerId(layer, fetchBands),
+      geotiff: member ? member.member.geotiff : layer.geotiff!,
       opacity: layer.state.opacity,
       getTileData,
       renderTile,
@@ -891,11 +1138,16 @@ export class LayerManager {
         _tiff: GeoTIFF,
         options: { geographicBounds: GeographicBounds },
       ) => {
+        const bounds = clampBoundsLatitude(options.geographicBounds);
+        if (member) {
+          this._onMemberBounds(layer, member.member, bounds);
+          return;
+        }
         // Only the first arrival is an observable change; onGeoTIFFLoad can
         // re-fire on later rebuilds with the same already-loaded GeoTIFF, and
         // re-emitting there could ping-pong with handlers that call setState.
         const boundsArrived = !layer.bounds;
-        layer.bounds = clampBoundsLatitude(options.geographicBounds);
+        layer.bounds = bounds;
         if (layer.zoomTo) {
           layer.zoomTo = false;
           this._fitBounds(layer.bounds);
@@ -910,6 +1162,33 @@ export class LayerManager {
     // Web-Mercator COGs (see web-mercator-cog-layer.ts). It is a no-op for any
     // other source CRS.
     return new WebMercatorCOGLayer(cogProps);
+  }
+
+  /**
+   * Folds one member's bounds into a mosaic layer's extent.
+   *
+   * Members report independently as each one's header resolves, so the layer's
+   * bounds grow to the union as they arrive. The map is only fitted once every
+   * member has reported — fitting on the first arrival would zoom to a single
+   * tile of the mosaic.
+   */
+  private _onMemberBounds(
+    layer: RasterLayer,
+    member: RasterMember,
+    bounds: GeographicBounds,
+  ): void {
+    // onGeoTIFFLoad re-fires on later rebuilds with the same already-loaded
+    // GeoTIFF; nothing below is observable once a member has reported.
+    if (member.bounds) return;
+    member.bounds = bounds;
+
+    const reported = layer.members!.flatMap((m) => (m.bounds ? [m.bounds] : []));
+    layer.bounds = unionBounds(reported);
+    if (layer.zoomTo && reported.length === layer.members!.length) {
+      layer.zoomTo = false;
+      this._fitBounds(layer.bounds!);
+    }
+    this._emit({ type: 'rasterchange', layerId: layer.id });
   }
 
   /** Records a CRS-resolution failure once: marks the layer errored, drops it

@@ -67,6 +67,99 @@ function averageStats(stats: BandStats[]): BandStats {
 }
 
 /**
+ * Redistributes one image's histogram onto a wider [min, max] range,
+ * accumulating into `target`.
+ *
+ * Each source bin's counts are credited to the target bin its *center* value
+ * falls in. That is an approximation — it collapses each bin to a point — but
+ * the error is bounded by one source bin width, which is what a histogram
+ * already quantizes away. It is what makes histograms computed over different
+ * ranges addable at all.
+ */
+function rebinInto(
+  target: number[],
+  stats: BandStats,
+  min: number,
+  max: number,
+): void {
+  const targetSpan = max - min;
+  const sourceSpan = stats.max - stats.min;
+  for (let i = 0; i < HISTOGRAM_BINS; i++) {
+    const count = stats.histogram[i] ?? 0;
+    if (count === 0) continue;
+    const center =
+      sourceSpan === 0
+        ? stats.min
+        : stats.min + ((i + 0.5) / HISTOGRAM_BINS) * sourceSpan;
+    const bin =
+      targetSpan === 0
+        ? 0
+        : Math.floor(((center - min) / targetSpan) * HISTOGRAM_BINS);
+    target[Math.min(HISTOGRAM_BINS - 1, Math.max(0, bin))] += count;
+  }
+}
+
+/**
+ * Merges stats sampled from several images of one dataset into a single block
+ * spanning all of them.
+ *
+ * Unlike {@link averageStats} — which sums bins across the *bands* of one image
+ * and averages their ranges — this unions the ranges and rebins each histogram
+ * onto the result, so percentiles taken from it describe the whole collection.
+ * Used for a mosaic VRT, whose members are separate files that must still share
+ * one rescale window.
+ *
+ * @param stats - Per-image stats for the same band
+ * @returns Merged stats, or null when none carry a usable range
+ */
+export function mergeBandStats(stats: BandStats[]): BandStats | null {
+  const usable = stats.filter(
+    (s) => Number.isFinite(s.min) && Number.isFinite(s.max) && s.max >= s.min,
+  );
+  if (usable.length === 0) return null;
+  if (usable.length === 1) return usable[0];
+
+  const min = Math.min(...usable.map((s) => s.min));
+  const max = Math.max(...usable.map((s) => s.max));
+  const histogram = new Array<number>(HISTOGRAM_BINS).fill(0);
+  for (const s of usable) rebinInto(histogram, s, min, max);
+  return { min, max, histogram };
+}
+
+/**
+ * Merges per-image {@link AutoStats} into one block covering every image.
+ *
+ * @param stats - One entry per image (e.g. per VRT member)
+ * @returns Stats whose per-band ranges span every image, or null stats when
+ *   no image produced any
+ */
+export function mergeAutoStats(stats: AutoStats[]): AutoStats {
+  const withBands = stats.filter((s) => s.perBand);
+  if (withBands.length === 0) return NULL_STATS;
+
+  const bandNumbers = new Set<number>();
+  for (const s of withBands) {
+    for (const band of s.perBand!.keys()) bandNumbers.add(band);
+  }
+
+  const perBand = new Map<number, BandStats>();
+  for (const band of [...bandNumbers].sort((a, b) => a - b)) {
+    const merged = mergeBandStats(
+      withBands.flatMap((s) => {
+        const bandStats = s.perBand!.get(band);
+        return bandStats ? [bandStats] : [];
+      }),
+    );
+    if (merged) perBand.set(band, merged);
+  }
+
+  return {
+    perBand: perBand.size > 0 ? perBand : null,
+    global: mergeBandStats(stats.flatMap((s) => (s.global ? [s.global] : []))),
+  };
+}
+
+/**
  * Linear-interpolated percentile from a histogram. `p` is in [0, 1]. Used
  * to derive default rescale ranges (typically [0.02, 0.98]) without storing
  * raw samples.

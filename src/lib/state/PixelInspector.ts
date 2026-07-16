@@ -1,7 +1,8 @@
 import { Popup, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
+import type { GeoTIFF } from '@developmentseed/geotiff';
 import { readPixelValues, type PixelReading } from '../raster/inspect';
 import { el } from '../ui/dom';
-import type { RasterLayer } from './RasterLayer';
+import { imagesAt, type RasterLayer } from './RasterLayer';
 
 /** The slice of maplibre-gl's Popup the inspector drives. Lets tests inject a
  * lightweight fake instead of a real popup. */
@@ -134,15 +135,19 @@ export class PixelInspector {
       return;
     }
 
+    // For a mosaic VRT layer this narrows to the member(s) covering the click;
+    // an empty list means the point is outside the mosaic, which needs no read.
+    const images = imagesAt(target, lngLat);
+    if (images.length === 0) {
+      this._show(lngLat, this._messageContent('No data at this location.'));
+      return;
+    }
+
     const controller = new AbortController();
     this._abort = controller;
     this._show(lngLat, this._messageContent('Reading…'));
 
-    this._deps
-      .readPixelValues(target.geotiff, lngLat, {
-        signal: controller.signal,
-        bandNames: target.bandNames,
-      })
+    this._readFirst(images, lngLat, controller.signal, target.bandNames)
       .then((reading) => {
         if (controller.signal.aborted) return;
         this._show(
@@ -157,6 +162,37 @@ export class PixelInspector {
         this._show(lngLat, this._messageContent('Could not read pixel value.'));
       });
   };
+
+  /**
+   * Reads `lngLat` from the first candidate image that actually covers it.
+   *
+   * `readPixelValues` resolves null when the point falls outside an image's
+   * pixel grid, which is the authoritative test — a mosaic member's bounds only
+   * bound its extent, and the point can still miss its grid (or land on a
+   * member that has not reported bounds yet). Candidates are tried in order and
+   * the first hit wins, matching how GDAL resolves overlapping VRT sources:
+   * later sources paint over earlier ones, so the *last* covering source is the
+   * visible one — but overlapping members are rejected in practice, since
+   * `parseVrt` only accepts sources placed at their natural position.
+   *
+   * @returns The first reading, or null when no candidate covers the point
+   */
+  private async _readFirst(
+    images: GeoTIFF[],
+    lngLat: [number, number],
+    signal: AbortSignal,
+    bandNames: Map<number, string> | null,
+  ): Promise<PixelReading | null> {
+    for (const image of images) {
+      const reading = await this._deps.readPixelValues(image, lngLat, {
+        signal,
+        bandNames,
+      });
+      if (signal.aborted) return null;
+      if (reading) return reading;
+    }
+    return null;
+  }
 
   private _show(lngLat: [number, number], content: Node): void {
     this._popup?.setLngLat(lngLat).setDOMContent(content).addTo(this._map);

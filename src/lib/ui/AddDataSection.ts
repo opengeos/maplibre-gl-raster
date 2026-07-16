@@ -10,20 +10,23 @@ export type AddDataSectionOptions = {
   sampleData?: RasterSampleDataset[];
   /** Placeholder for the sample-data dropdown. */
   sampleDataLabel?: string;
-  /** Called with a remote COG URL and the optional before-layer id and
-   * attribution. */
+  /** Called with a remote COG (or mosaic `.vrt`) URL and the optional
+   * before-layer id and attribution. */
   onAddUrl: (url: string, beforeId?: string, attribution?: string) => void;
-  /** Called once per locally selected or dropped GeoTIFF file, along with the
+  /** Called once per locally selected or dropped raster file, along with the
    * optional before-layer id and attribution. Multiple files (multi-select or
-   * a multi-file drop) invoke this for each `.tif`/`.tiff` file in selection
-   * order. */
+   * a multi-file drop) invoke this for each `.tif`/`.tiff`/`.vrt` file in
+   * selection order. */
   onAddFile: (file: File, beforeId?: string, attribution?: string) => void;
 };
 
 /**
  * "Add data" section: URL input + Load button, plus a drop zone that accepts
- * one or more `.tif` / `.tiff` files via click-to-browse (multi-select) or
- * drag-and-drop. Ported from cog-viewer's EmptyState.
+ * one or more `.tif` / `.tiff` / `.vrt` files via click-to-browse
+ * (multi-select) or drag-and-drop. Ported from cog-viewer's EmptyState.
+ *
+ * A dropped `.vrt` only resolves sources it names as absolute URLs — the
+ * browser cannot read the files sitting beside it on disk. See `raster/vrt.ts`.
  */
 export class AddDataSection {
   /** Root element to insert into the panel. */
@@ -37,14 +40,14 @@ export class AddDataSection {
   constructor(options: AddDataSectionOptions) {
     // The accept attribute is advisory (and drag-drop bypasses it entirely),
     // so filter by extension before handing files to the raster loader.
-    const isTiff = (file: File): boolean => /\.tiff?$/i.test(file.name);
-    // Hand every `.tif`/`.tiff` in a selection/drop to the loader, in order.
+    const isRaster = (file: File): boolean => /\.(tiff?|vrt)$/i.test(file.name);
+    // Hand every raster in a selection/drop to the loader, in order.
     const addFiles = (files: FileList | null | undefined): void => {
       if (!files) return;
       const beforeId = currentBeforeId();
       const attribution = currentAttribution();
       for (const file of Array.from(files)) {
-        if (isTiff(file)) options.onAddFile(file, beforeId, attribution);
+        if (isRaster(file)) options.onAddFile(file, beforeId, attribution);
       }
     };
     const input = el('input', {
@@ -181,7 +184,7 @@ export class AddDataSection {
     const fileInput = el('input', {
       type: 'file',
       ariaLabel: 'raster-file',
-      attrs: { accept: '.tif,.tiff', multiple: '' },
+      attrs: { accept: '.tif,.tiff,.vrt', multiple: '' },
     });
     fileInput.style.display = 'none';
     fileInput.addEventListener('change', () => {
@@ -193,7 +196,7 @@ export class AddDataSection {
       'div',
       {
         className: 'mlr-drop-zone',
-        text: 'Drop .tif files here, or click to browse',
+        text: 'Drop .tif or .vrt files here, or click to browse',
         attrs: { role: 'button', tabindex: '0' },
       },
       fileInput,
