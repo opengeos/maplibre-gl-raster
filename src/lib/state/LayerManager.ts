@@ -1,5 +1,10 @@
+import type { Layer } from '@deck.gl/core';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { COGLayer } from '@developmentseed/deck.gl-geotiff';
+import {
+  COGLayer,
+  MosaicLayer,
+  type MosaicSource,
+} from '@developmentseed/deck.gl-geotiff';
 import {
   createColormapTexture,
   decodeColormapSprite,
@@ -57,6 +62,17 @@ import {
   isMosaicJsonUrl,
   type TiTilerTileJson,
 } from '../raster/titiler';
+import {
+  loadMosaic as defaultLoadMosaic,
+  mosaicInitialView,
+  mosaicMinZoom,
+  type MosaicAsset,
+  type ParsedMosaic,
+} from '../raster/mosaic';
+
+/** A deck.gl {@link MosaicSource} augmented with the asset URL the engine opens
+ * and renders. */
+type MosaicRenderSource = MosaicSource & { url: string };
 import {
   createLayerState,
   deriveLayerName,
@@ -289,6 +305,9 @@ export interface LayerManagerDeps {
   loadGeoTIFF: (url: string) => Promise<GeoTIFF>;
   /** Fetches and parses a mosaic VRT into the member COGs to render. */
   loadVrt: (url: string, signal?: AbortSignal) => Promise<VrtMosaic>;
+  /** Fetches and parses a mosaic manifest (MosaicJSON or STAC) into the member
+   * COG assets to render. */
+  loadMosaic: (url: string, signal?: AbortSignal) => Promise<ParsedMosaic>;
   computeAutoStats: (
     tiff: GeoTIFF,
     signal: AbortSignal,
@@ -322,6 +341,7 @@ export interface LayerManagerDeps {
 const DEFAULT_DEPS: LayerManagerDeps = {
   loadGeoTIFF: defaultLoadGeoTIFF,
   loadVrt: defaultLoadVrt,
+  loadMosaic: defaultLoadMosaic,
   computeAutoStats: defaultComputeAutoStats,
   epsgResolver: createResilientEpsgResolver(),
   // Resolved lazily: the package is an optional peer dependency, only loaded
@@ -366,6 +386,14 @@ export class LayerManager {
   private _cogEngine: CogTilerEngine | null = null;
   /** The TiTiler backend, created lazily when that engine is selected. */
   private _titilerEngine: TiTilerEngine | null = null;
+  /** Opened GeoTIFF headers for MosaicJSON assets, keyed by URL, so the deck.gl
+   * mosaic reuses them across renders instead of re-opening on every viewport
+   * change. Cleared on destroy. */
+  private _mosaicGeotiffs = new globalThis.Map<string, Promise<GeoTIFF>>();
+  /** Memoized deck.gl mosaic sources per asset list, so a re-render reuses the
+   * same array reference and MosaicLayer keeps its spatial index instead of
+   * rebuilding it every time. */
+  private _mosaicSources = new WeakMap<MosaicAsset[], MosaicRenderSource[]>();
   /** TiTiler instance the `titiler` engine renders through. */
   private _titilerEndpoint: string;
   private _overlay: OverlayLike | null = null;
@@ -461,6 +489,10 @@ export class LayerManager {
     if (engine !== 'maplibre-gl-raster') this._overlay?.setProps({ layers: [] });
     if (engine !== 'cog-tiler-wasm') this._cogEngine?.clear();
     if (engine !== 'titiler') this._titilerEngine?.clear();
+    // Ensure the newly active engine's artifacts exist before rendering into
+    // them — switching to deck.gl before any layer was added on it must create
+    // the overlay, or _rebuild would render nothing.
+    this._ensureEngine();
     this._rebuild();
     this._emit({ type: 'rasterchange' });
   }
@@ -515,6 +547,9 @@ export class LayerManager {
       geotiff: null,
       members: null,
       isMosaicJson: mosaicJson,
+      mosaicKind: null,
+      mosaicAssets: null,
+      mosaicMinzoom: null,
       autoStats: null,
       bandCount: null,
       bandNames: null,
@@ -535,26 +570,42 @@ export class LayerManager {
     this._emit({ type: 'rasteradd', layerId: layer.id });
 
     try {
-      // A MosaicJSON has no local GeoTIFF: TiTiler renders it and reports its
-      // bounds. Skip the header load entirely, force the only engine that can
-      // draw it, and default to an RGB view (the manifest does not expose a
-      // band count; most mosaics are RGB imagery).
+      // A mosaic manifest (MosaicJSON or STAC) has no single local GeoTIFF. It
+      // is rendered client-side as a deck.gl mosaic (one COGLayer per in-view
+      // asset) or, for a MosaicJSON, server-side by TiTiler. Parse it into its
+      // assets + extent, then pick an engine that can draw it.
       if (mosaicJson) {
+        await this._openMosaic(layer, url);
+        if (this._destroyed || !this.getLayer(layer.id)) return layer.id;
         layer.loading = false;
-        // The manifest exposes no band count; assume an RGB mosaic (the common
-        // case) so the band pickers offer three channels. A single-band mosaic
-        // still works — the user switches to single mode and band 1.
-        layer.bandCount = 3;
-        if (!layer.userPickedMode) {
-          layer.state.mode = 'rgb';
-          layer.state.bands = [1, 2, 3];
-        }
-        if (this._engine !== 'titiler') {
+        // A STAC mosaic has no TiTiler equivalent, and the WASM engine cannot
+        // mosaic at all; both fall back to the default GPU engine. deck.gl and
+        // (for a MosaicJSON) titiler render it, so keep the active one.
+        const canRender =
+          this._engine === 'maplibre-gl-raster' ||
+          (this._engine === 'titiler' && layer.mosaicKind === 'mosaicjson');
+        if (!canRender) {
           // setEngine rebuilds (rendering the new layer) and emits rasterchange.
-          this.setEngine('titiler');
+          this.setEngine(DEFAULT_ENGINE);
         } else {
+          this._ensureEngine();
           this._rebuild();
           this._emit({ type: 'rasterchange', layerId: layer.id });
+        }
+        if (layer.bounds && layer.zoomTo) {
+          layer.zoomTo = false;
+          if (this._engine === 'titiler') {
+            // TiTiler renders the whole mosaic server-side as one raster source,
+            // so fit the full extent — floored to the native minzoom, below
+            // which no tiles exist.
+            this._fitBounds(layer.bounds, layer.mosaicMinzoom ?? undefined);
+          } else {
+            // deck.gl draws one COGLayer per in-view asset; cap the initial
+            // view of a large mosaic so it doesn't render hundreds at once.
+            this._fitBounds(
+              mosaicInitialView(layer.bounds, layer.mosaicAssets ?? []),
+            );
+          }
         }
         return layer.id;
       }
@@ -682,6 +733,91 @@ export class LayerManager {
     if (mosaic.nodata !== null && layer.state.nodata === 'auto') {
       layer.state.nodata = mosaic.nodata;
     }
+  }
+
+  /**
+   * Parses a mosaic manifest (MosaicJSON or STAC) into the assets the deck.gl
+   * engine renders and the band metadata the panel reads.
+   *
+   * Unlike a VRT, the assets are not all opened up front — a mosaic can list
+   * thousands, and the deck.gl {@link MosaicLayer} opens each lazily only while
+   * it is in view. Only the first asset's header is read here, to supply the
+   * band count, names and embedded palette the whole mosaic shares, and to seed
+   * one rescale window (sampling every asset is infeasible). Band count and
+   * bounds come from that header and the manifest; each asset is still
+   * georeferenced by its own header when opened.
+   *
+   * @param layer - The layer being added; mutated in place
+   * @param url - URL the manifest is fetched from
+   */
+  private async _openMosaic(layer: RasterLayer, url: string): Promise<void> {
+    const mosaic = await this._deps.loadMosaic(url, layer.abort.signal);
+    if (this._destroyed || !this.getLayer(layer.id)) return;
+    layer.mosaicKind = mosaic.kind;
+    layer.mosaicAssets = mosaic.assets;
+    layer.mosaicMinzoom = mosaic.minzoom;
+    layer.bounds = clampBoundsLatitude(mosaic.bounds);
+
+    try {
+      const tiff = await this._deps.loadGeoTIFF(mosaic.assets[0].url);
+      if (this._destroyed || !this.getLayer(layer.id)) return;
+      layer.bandCount = tiff.count;
+      layer.bandNames = readBandNames(tiff);
+      layer.palette = extractPalette(tiff);
+      if (!layer.userPickedMode) {
+        if (layer.bandCount >= 3) {
+          layer.state.mode = 'rgb';
+          layer.state.bands = [1, 2, 3];
+        } else {
+          layer.state.mode = 'single';
+          layer.state.bands = [1];
+          if (layer.palette) layer.state.colormap = 'palette';
+        }
+      }
+      // Sample this one asset's statistics for a shared rescale window.
+      this._computeMosaicStats(layer, tiff);
+    } catch {
+      // The first asset's header could not be read (e.g. CORS). Assume an RGB
+      // imagery mosaic so the band pickers offer three channels; rendering
+      // falls back to a [0, 1] rescale until the user sets one.
+      if (this._destroyed || !this.getLayer(layer.id)) return;
+      layer.bandCount = 3;
+      if (!layer.userPickedMode) {
+        layer.state.mode = 'rgb';
+        layer.state.bands = [1, 2, 3];
+      }
+    }
+  }
+
+  /** Samples one mosaic asset's statistics in the background, applying them as
+   * the whole mosaic's rescale window when they land. */
+  private _computeMosaicStats(layer: RasterLayer, sample: GeoTIFF): void {
+    const signal = layer.abort.signal;
+    void this._deps.computeAutoStats(sample, signal).then(
+      (stats) => {
+        if (signal.aborted || this._destroyed) return;
+        layer.autoStats = stats;
+        this._rebuild();
+        this._emit({ type: 'rasterchange', layerId: layer.id });
+      },
+      () => {
+        // Stats are an enhancement; rendering falls back to a [0, 1] rescale.
+      },
+    );
+  }
+
+  /** Opens (or reuses) a mosaic asset's GeoTIFF header. A failed open is
+   * evicted so a later viewport pass can retry it. */
+  private _openMosaicAsset(url: string): Promise<GeoTIFF> {
+    let opened = this._mosaicGeotiffs.get(url);
+    if (!opened) {
+      opened = this._deps.loadGeoTIFF(url).catch((err: unknown) => {
+        this._mosaicGeotiffs.delete(url);
+        throw err instanceof Error ? err : new Error(String(err));
+      });
+      this._mosaicGeotiffs.set(url, opened);
+    }
+    return opened;
   }
 
   /**
@@ -851,6 +987,7 @@ export class LayerManager {
       this._titilerEngine.destroy();
       this._titilerEngine = null;
     }
+    this._mosaicGeotiffs.clear();
     this._handlers.clear();
   }
 
@@ -923,8 +1060,9 @@ export class LayerManager {
    *
    * TiTiler reads its sources over HTTP, so only remote layers qualify: a
    * MosaicJSON manifest, or a plain remote COG (its URL). Local-file layers
-   * (blob URLs the server cannot reach) and VRT mosaics (not a format the
-   * `/cog` router reads) are skipped — they render on the other engines.
+   * (blob URLs the server cannot reach), VRT mosaics (not a format the `/cog`
+   * router reads), and STAC mosaics (no `/mosaicjson` equivalent) are skipped —
+   * they render on the deck.gl engine instead.
    */
   private _titilerRenderableLayers(): TiTilerEngineLayer[] {
     return this._layers
@@ -932,7 +1070,7 @@ export class LayerManager {
         (l) =>
           l.state.visible &&
           !this._crsFailed.has(l.id) &&
-          (l.isMosaicJson ||
+          (l.mosaicKind === 'mosaicjson' ||
             (!!l.geotiff && l.source.kind === 'url' && !l.members)),
       )
       .map((l) => ({
@@ -1214,7 +1352,12 @@ export class LayerManager {
     }
     if (!this._overlay) return;
     const layers = this._layers
-      .filter((l) => l.geotiff && l.state.visible && !this._crsFailed.has(l.id))
+      .filter(
+        (l) =>
+          (l.geotiff || l.mosaicAssets) &&
+          l.state.visible &&
+          !this._crsFailed.has(l.id),
+      )
       .flatMap((l) => this._buildCogLayers(l));
     this._overlay.setProps({ layers });
   }
@@ -1228,7 +1371,7 @@ export class LayerManager {
    * what keeps a mosaic from rendering as a quilt of independently stretched
    * tiles.
    */
-  private _buildCogLayers(layer: RasterLayer): COGLayer<MultiBandTileData>[] {
+  private _buildCogLayers(layer: RasterLayer): Layer[] {
     // Build the render pipeline once and hand the same one to every member:
     // besides being what "shared state" means here, _renderTileFor has a side
     // effect (it lazily uploads the palette texture, and reports a failure as a
@@ -1245,10 +1388,86 @@ export class LayerManager {
       fetchBands,
       getTileData: makeMultiBandTileLoader(fetchBands),
     };
+    // A MosaicJSON renders as one MosaicLayer that spawns a COGLayer per
+    // in-view asset, all sharing this layer's pipeline (state + stats).
+    if (layer.mosaicAssets) return [this._buildMosaicLayer(layer, pipeline)];
     if (!layer.members) return [this._buildCogLayer(layer, pipeline)];
     return layer.members.map((member, i) =>
       this._buildCogLayer(layer, pipeline, { member, index: i }),
     );
+  }
+
+  /**
+   * Builds the deck.gl {@link MosaicLayer} for a MosaicJSON layer.
+   *
+   * The mosaic holds one {@link import('../raster/mosaicjson').MosaicAsset} per
+   * COG (URL + WGS84 bbox); its spatial index culls to the viewport and, for
+   * each visible asset, opens the COG ({@link _openMosaicAsset}) and renders it
+   * with a {@link WebMercatorCOGLayer} carrying the layer's shared pipeline —
+   * the same per-COG GPU path a plain raster uses, so every asset is
+   * reprojected and stretched identically.
+   */
+  private _buildMosaicLayer(
+    layer: RasterLayer,
+    pipeline: {
+      renderTile: ReturnType<LayerManager['_renderTileFor']>;
+      fetchBands: number[];
+      getTileData: ReturnType<typeof makeMultiBandTileLoader>;
+    },
+  ): Layer {
+    const { renderTile, fetchBands, getTileData } = pipeline;
+    const bandTag = `#b${fetchBands.join('-')}`;
+    type Source = MosaicRenderSource;
+    const assets = layer.mosaicAssets!;
+    // Reuse the same sources array across re-renders so MosaicLayer's spatial
+    // index survives (a fresh array reference forces it to rebuild).
+    let sources = this._mosaicSources.get(assets);
+    if (!sources) {
+      sources = assets.map((asset) => ({
+        id: asset.url,
+        bbox: asset.bbox,
+        url: asset.url,
+      }));
+      this._mosaicSources.set(assets, sources);
+    }
+    // Build props as a const so beforeId (read by @deck.gl/mapbox, absent from
+    // MosaicLayerProps) passes structural assignability instead of tripping the
+    // object-literal excess-property check — same trick as _buildCogLayer.
+    const props = {
+      // The band set is encoded so a band change remounts the mosaic (and its
+      // COGLayers) to refetch, matching cogLayerId's behavior for plain rasters.
+      id: `${layer.id}${bandTag}`,
+      sources,
+      getSource: (source: Source) => this._openMosaicAsset(source.url),
+      renderSource: (source: Source, opts: { data?: GeoTIFF }): Layer | null => {
+        if (!opts.data) return null;
+        return new WebMercatorCOGLayer<MultiBandTileData>({
+          id: `${layer.id}::mosaic::${source.url}${bandTag}`,
+          geotiff: opts.data,
+          opacity: layer.state.opacity,
+          getTileData,
+          renderTile,
+          epsgResolver: this._deps.epsgResolver,
+        });
+      },
+      onSourceError: (_source: Source, info: { error: Error }) => {
+        // One unreadable asset must not fail the whole mosaic; surface it as a
+        // non-fatal error and let the other assets render.
+        this._emit({ type: 'error', layerId: layer.id, error: info.error });
+      },
+      // Below this zoom the mosaic renders nothing, so a low/world view never
+      // spins up one COGLayer per asset for the whole extent (undefined for a
+      // small mosaic, which is always cheap to draw in full).
+      minZoom: mosaicMinZoom(assets) ?? undefined,
+      // Prioritize the assets nearest the viewport centre and cap concurrent
+      // COG fetches so a dense view streams in smoothly.
+      maxRequests: 24,
+      // Each cached tile is a whole COGLayer; opened GeoTIFFs are already cached
+      // in _mosaicGeotiffs, so there is nothing cheap to retain here.
+      maxCacheSize: 0,
+      beforeId: this._resolveBeforeId(layer.beforeId),
+    };
+    return new MosaicLayer<Source, GeoTIFF>(props);
   }
 
   private _buildCogLayer(

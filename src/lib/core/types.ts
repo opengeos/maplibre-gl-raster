@@ -10,14 +10,19 @@ export type RasterMode = 'rgb' | 'single' | 'index';
 /**
  * Which backend renders the raster layers:
  * - `'maplibre-gl-raster'` — the default GPU pipeline (a deck.gl `COGLayer` on
- *   a shared `MapboxOverlay`).
+ *   a shared `MapboxOverlay`). Also renders a mosaic (MosaicJSON or STAC
+ *   `FeatureCollection`) client-side as a deck.gl `MosaicLayer` — one
+ *   `COGLayer` per in-view asset, read directly over HTTP.
  * - `'cog-tiler-wasm'` — a serverless CPU/WASM tiler ([cog-tiler-wasm](https://github.com/opengeos/cog-tiler-wasm))
  *   wired to a MapLibre custom protocol; loaded lazily on first use.
  * - `'titiler'` — a server-side dynamic tiler ([TiTiler](https://developmentseed.org/titiler/)):
  *   tiles are rendered by a remote TiTiler instance and drawn as a native
- *   MapLibre raster layer. It is the only engine that can render a MosaicJSON
- *   (the others read a single GeoTIFF header). Configure the instance with
+ *   MapLibre raster layer. Renders a MosaicJSON server-side (so it reaches
+ *   assets a browser can't, e.g. non-CORS buckets). Configure the instance with
  *   {@link RasterControlOptions.titilerEndpoint}.
+ *
+ * A MosaicJSON renders on both `'maplibre-gl-raster'` (default) and `'titiler'`;
+ * a STAC mosaic renders only on `'maplibre-gl-raster'`.
  *
  * The choice is global (it applies to every layer), not per-layer.
  */
