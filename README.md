@@ -164,7 +164,10 @@ layer:
   ([cog-tiler-wasm](https://github.com/opengeos/cog-tiler-wasm)) wired to a
   MapLibre custom protocol. Tiles are rendered on the CPU and served as native
   MapLibre raster layers. The panel's settings (bands, rescale, colormap,
-  curve, gamma, nodata, opacity) map directly onto its render parameters.
+  curve, gamma, nodata, opacity) map directly onto its render parameters. This
+  tiler ships a shorter colormap list than the deck.gl sprite, so while it is
+  active the panel's colormap picker narrows to the ramps it can actually draw
+  (a name it does not know renders black rather than falling back).
 - **`titiler`** - a server-side dynamic tiler
   ([TiTiler](https://developmentseed.org/titiler/)). Tiles are rendered by a
   remote TiTiler instance and drawn as native MapLibre raster layers, so

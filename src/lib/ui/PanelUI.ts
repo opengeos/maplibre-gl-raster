@@ -99,6 +99,8 @@ export class PanelUI {
         if (id) this._manager.setState(id, patch);
       },
       options?.inspect,
+      // Re-read per render so switching engines renarrows the colormap list.
+      () => this._manager.supportedColormaps,
     );
 
     this._root = el(

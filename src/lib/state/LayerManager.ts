@@ -51,6 +51,7 @@ import {
   CogTilerEngine,
   type CogEngineLayer,
   type CogTilerModule,
+  COG_TILER_COLORMAPS,
 } from './CogTilerEngine';
 import {
   defaultFetchTileJson,
@@ -456,6 +457,22 @@ export class LayerManager {
   /** The TiTiler instance the `titiler` engine renders through. */
   get titilerEndpoint(): string {
     return this._titilerEndpoint;
+  }
+
+  /**
+   * The colormap names the active engine can actually render, or null when it
+   * supports every colormap the panel offers.
+   *
+   * Only `cog-tiler-wasm` is limited: it knows a short list, and renders a tile
+   * **black** for any other name rather than falling back — which looks like
+   * the colormap was ignored. The panel narrows its picker to this set so a
+   * user cannot pick a ramp that silently will not draw. The deck.gl engine
+   * draws the full sprite, and TiTiler resolves names server-side.
+   */
+  get supportedColormaps(): ReadonlySet<string> | null {
+    return this._engine === 'cog-tiler-wasm'
+      ? new Set(COG_TILER_COLORMAPS)
+      : null;
   }
 
   /**

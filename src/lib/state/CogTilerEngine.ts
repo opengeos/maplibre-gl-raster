@@ -46,6 +46,35 @@ export interface CogTilerEngineDeps {
   onError: (layerId: string | undefined, error: Error) => void;
 }
 
+/**
+ * The colormaps `cog-tiler-wasm` can render, mirroring its `colormaps()`.
+ *
+ * The panel offers the ~100 ramps baked into the deck.gl colormap sprite, but
+ * this engine only knows these. Passing any other name does not fall back to a
+ * default — the wasm tiler renders the tile **black**, which reads as "the
+ * colormap did nothing". The picker is therefore narrowed to this set while
+ * this engine is active (see
+ * {@link import('./LayerManager').LayerManager.supportedColormaps}).
+ *
+ * Kept as a literal rather than read from `colormaps()` so the UI can filter
+ * before the wasm module has loaded; re-check it when upgrading the package.
+ */
+export const COG_TILER_COLORMAPS: readonly string[] = [
+  'viridis',
+  'magma',
+  'plasma',
+  'inferno',
+  'cividis',
+  'turbo',
+  'terrain',
+  'blues',
+  'greens',
+  'reds',
+  'rdylgn',
+  'spectral',
+  'gray',
+];
+
 /** A blank tile: cog-tiler returns an empty buffer for tiles outside the COG. */
 const EMPTY_TILE = new Uint8Array(0);
 

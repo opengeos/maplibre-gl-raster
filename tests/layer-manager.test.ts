@@ -673,6 +673,27 @@ describe('LayerManager engine selection', () => {
     expect(manager.engine).toBe('maplibre-gl-raster');
   });
 
+  it('reports the colormaps the active engine can render', () => {
+    const { manager } = makeHarness();
+    // deck.gl draws the whole sprite, so nothing is restricted.
+    expect(manager.supportedColormaps).toBeNull();
+
+    // cog-tiler-wasm knows only a short list and renders a tile black for any
+    // other name, so the panel must narrow the picker to these.
+    manager.setEngine('cog-tiler-wasm');
+    const allowed = manager.supportedColormaps;
+    expect(allowed).not.toBeNull();
+    expect(allowed!.has('viridis')).toBe(true);
+    expect(allowed!.has('turbo')).toBe(true);
+    expect(allowed!.has('gray')).toBe(true);
+    expect(allowed!.has('jet')).toBe(false);
+    expect(allowed!.size).toBeLessThan(20);
+
+    // TiTiler resolves colormap names server-side; nothing is restricted.
+    manager.setEngine('titiler');
+    expect(manager.supportedColormaps).toBeNull();
+  });
+
   it('renders through the cog-tiler-wasm engine when configured, skipping the deck overlay', async () => {
     const { manager, deps, loadCogTiler, map } = makeHarness({
       engine: 'cog-tiler-wasm',
