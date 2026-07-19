@@ -463,16 +463,21 @@ export class LayerManager {
    * The colormap names the active engine can actually render, or null when it
    * supports every colormap the panel offers.
    *
-   * Only `cog-tiler-wasm` is limited: it knows a short list, and renders a tile
-   * **black** for any other name rather than falling back — which looks like
-   * the colormap was ignored. The panel narrows its picker to this set so a
-   * user cannot pick a ramp that silently will not draw. The deck.gl engine
-   * draws the full sprite, and TiTiler resolves names server-side.
+   * Only `cog-tiler-wasm` is limited: it knows a fixed set compiled into the
+   * wasm, and renders an unknown name with its `gray` ramp rather than the
+   * requested one — which reads as "the colormap was ignored". The panel
+   * narrows its picker to this set so a user cannot pick a ramp that will not
+   * draw as chosen. The deck.gl engine draws the full sprite, and TiTiler
+   * resolves names server-side.
+   *
+   * The set comes from the loaded engine, not a hard-coded list, so a
+   * `cog-tiler-wasm` release that adds ramps widens the picker with no change
+   * here. Before the engine exists (or its module has loaded) the conservative
+   * {@link COG_TILER_COLORMAPS} baseline applies.
    */
   get supportedColormaps(): ReadonlySet<string> | null {
-    return this._engine === 'cog-tiler-wasm'
-      ? new Set(COG_TILER_COLORMAPS)
-      : null;
+    if (this._engine !== 'cog-tiler-wasm') return null;
+    return this._cogEngine?.supportedColormaps ?? new Set(COG_TILER_COLORMAPS);
   }
 
   /**
@@ -1074,6 +1079,9 @@ export class LayerManager {
         loadModule: this._deps.loadCogTiler,
         onBounds: (id, bounds, zoomTo) => this._onCogBounds(id, bounds, zoomTo),
         onError: (id, error) => this._onCogError(id, error),
+        // The module reports which colormaps it actually has; re-emit so the
+        // panel's picker widens from the baseline to the real set.
+        onReady: () => this._emit({ type: 'rasterchange' }),
       });
     }
     return this._cogEngine;

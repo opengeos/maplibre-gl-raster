@@ -44,20 +44,26 @@ export interface CogTilerEngineDeps {
   ) => void;
   /** Reports an open / module-load failure (layerId omitted for global ones). */
   onError: (layerId: string | undefined, error: Error) => void;
+  /** Fires once the wasm module has loaded. Until then the engine can only
+   * assume a baseline colormap set, so the owner re-renders the panel here to
+   * pick up {@link CogTilerEngine.supportedColormaps}. */
+  onReady?: () => void;
 }
 
 /**
- * The colormaps `cog-tiler-wasm` can render, mirroring its `colormaps()`.
+ * The colormaps assumed renderable before the wasm module has loaded.
  *
- * The panel offers the ~100 ramps baked into the deck.gl colormap sprite, but
- * this engine only knows these. Passing any other name does not fall back to a
- * default — the wasm tiler renders the tile **black**, which reads as "the
- * colormap did nothing". The picker is therefore narrowed to this set while
- * this engine is active (see
- * {@link import('./LayerManager').LayerManager.supportedColormaps}).
+ * This is only a starting guess: once the module is in memory the engine
+ * reports its real set from `colormaps()` (see
+ * {@link CogTilerEngine.supportedColormaps}), so a package that ships more
+ * ramps widens the picker on its own with no change here. The conservative
+ * subset below is what every published version has always known, so the picker
+ * never offers a ramp the tiler cannot draw during that first moment.
  *
- * Kept as a literal rather than read from `colormaps()` so the UI can filter
- * before the wasm module has loaded; re-check it when upgrading the package.
+ * Rendering an unknown name is a soft failure, not a hard one: the tiler falls
+ * back to its `gray` ramp (asserted upstream by
+ * `colormap::tests::unknown_name_falls_back_to_gray`), so a mismatch looks like
+ * a greyscale image rather than a blank tile.
  */
 export const COG_TILER_COLORMAPS: readonly string[] = [
   'viridis',
@@ -215,6 +221,25 @@ export class CogTilerEngine {
     this._deps = deps;
   }
 
+  /**
+   * The colormap names this build of `cog-tiler-wasm` can actually render.
+   *
+   * Read from the module's own `colormaps()` once it has loaded, so upgrading
+   * the package widens the picker without a change here; until then the
+   * conservative {@link COG_TILER_COLORMAPS} baseline stands in. A module too
+   * old to expose `colormaps()` also falls back to the baseline.
+   */
+  get supportedColormaps(): ReadonlySet<string> {
+    let names: string[] | undefined;
+    try {
+      names = this._module?.colormaps?.();
+    } catch {
+      // A malformed module must not break the panel; fall back to the baseline.
+      names = undefined;
+    }
+    return new Set(names?.length ? names : COG_TILER_COLORMAPS);
+  }
+
   /** Renders the given layers (in draw order, first = bottom), adding, updating,
    * reordering, and removing native MapLibre raster layers to match. */
   sync(layers: CogEngineLayer[]): void {
@@ -311,7 +336,11 @@ export class CogTilerEngine {
         });
       this._modulePromise.then(
         () => {
-          if (!this._destroyed) this._apply();
+          if (this._destroyed) return;
+          this._apply();
+          // The real colormap set is only knowable now, so let the owner
+          // refresh anything derived from it.
+          this._deps.onReady?.();
         },
         () => {},
       );
