@@ -134,6 +134,56 @@ describe('LayerManager deck.gl mosaic', () => {
     expect(layers[0].constructor.name).toBe('MosaicLayer');
   });
 
+  it('renders a local .json mosaic file on the deck.gl engine', async () => {
+    const createObjectURL = vi.fn(() => 'blob:fake-mosaic');
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL: vi.fn(),
+    });
+    try {
+      const { manager, setProps, loadMosaic } = makeHarness({
+        engine: 'titiler',
+        mosaic: STAC,
+      });
+      const file = new File(['{}'], 'my_mosaic.json', {
+        type: 'application/json',
+      });
+      const id = await manager.addRaster(file);
+
+      // A local file's blob URL is parsed for the manifest, and (unreachable by
+      // a server) it renders on the deck.gl engine.
+      expect(loadMosaic).toHaveBeenCalledWith('blob:fake-mosaic', expect.anything());
+      expect(manager.engine).toBe('maplibre-gl-raster');
+      const layer = manager.getLayer(id)!;
+      expect(layer.isMosaicJson).toBe(true);
+      expect(layer.source.kind).toBe('file');
+      const layers = lastLayers(setProps as ReturnType<typeof vi.fn>);
+      expect(layers).toHaveLength(1);
+      expect(layers[0].constructor.name).toBe('MosaicLayer');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('resolves a failed asset open to null instead of rejecting', async () => {
+    // A rejected getSource would leave MosaicLayer rendering a null tile and
+    // crash; the engine must resolve null so the asset is simply skipped.
+    const { manager, setProps, loadGeoTIFF } = makeHarness();
+    await manager.addRaster('https://example.com/mosaic.json');
+    const layers = lastLayers(setProps as ReturnType<typeof vi.fn>);
+    const getSource = (
+      layers[0] as unknown as {
+        props: { getSource: (s: { url: string }) => Promise<unknown> };
+      }
+    ).props.getSource;
+
+    loadGeoTIFF.mockRejectedValueOnce(new Error('CORS blocked'));
+    await expect(
+      getSource({ url: 'https://x.com/broken.tif' }),
+    ).resolves.toBeNull();
+  });
+
   it('hides the mosaic from the overlay when the layer is not visible', async () => {
     const { manager, setProps } = makeHarness();
     const id = await manager.addRaster('https://example.com/mosaic.json');

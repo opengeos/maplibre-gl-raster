@@ -386,10 +386,14 @@ export class LayerManager {
   private _cogEngine: CogTilerEngine | null = null;
   /** The TiTiler backend, created lazily when that engine is selected. */
   private _titilerEngine: TiTilerEngine | null = null;
-  /** Opened GeoTIFF headers for MosaicJSON assets, keyed by URL, so the deck.gl
+  /** Opened GeoTIFF headers for mosaic assets, keyed by URL, so the deck.gl
    * mosaic reuses them across renders instead of re-opening on every viewport
-   * change. Cleared on destroy. */
-  private _mosaicGeotiffs = new globalThis.Map<string, Promise<GeoTIFF>>();
+   * change. A failed open resolves to null (not a rejection) so MosaicLayer
+   * skips the asset rather than crashing on a null tile. Cleared on destroy. */
+  private _mosaicGeotiffs = new globalThis.Map<
+    string,
+    Promise<GeoTIFF | null>
+  >();
   /** Memoized deck.gl mosaic sources per asset list, so a re-render reuses the
    * same array reference and MosaicLayer keeps its spatial index instead of
    * rebuilding it every time. */
@@ -528,10 +532,11 @@ export class LayerManager {
     }
     const isFile = typeof source !== 'string';
     const url = isFile ? URL.createObjectURL(source) : source;
-    // A MosaicJSON manifest (URL only) is rendered server-side by TiTiler; it
-    // has no single GeoTIFF to read locally, so it takes a distinct load path
-    // below and forces the `titiler` engine.
-    const mosaicJson = !isFile && isMosaicJsonUrl(source);
+    // A `.json` source is a mosaic manifest (MosaicJSON or STAC), not a single
+    // GeoTIFF, so it takes a distinct load path below. A local `.json` file is
+    // parsed from its blob URL and rendered client-side by deck.gl (its member
+    // COGs are absolute URLs); TiTiler can only render a remote manifest.
+    const mosaicJson = isMosaicJsonUrl(isFile ? source.name : source);
     const layer: RasterLayer = {
       id,
       name: options?.name ?? deriveLayerName(isFile ? source.name : source),
@@ -578,12 +583,15 @@ export class LayerManager {
         await this._openMosaic(layer, url);
         if (this._destroyed || !this.getLayer(layer.id)) return layer.id;
         layer.loading = false;
-        // A STAC mosaic has no TiTiler equivalent, and the WASM engine cannot
-        // mosaic at all; both fall back to the default GPU engine. deck.gl and
-        // (for a MosaicJSON) titiler render it, so keep the active one.
+        // A STAC mosaic has no TiTiler equivalent, a local file's blob URL is
+        // unreachable by the server, and the WASM engine cannot mosaic at all;
+        // these fall back to the default GPU engine. deck.gl always renders a
+        // mosaic; TiTiler renders only a remote MosaicJSON.
         const canRender =
           this._engine === 'maplibre-gl-raster' ||
-          (this._engine === 'titiler' && layer.mosaicKind === 'mosaicjson');
+          (this._engine === 'titiler' &&
+            layer.mosaicKind === 'mosaicjson' &&
+            !isFile);
         if (!canRender) {
           // setEngine rebuilds (rendering the new layer) and emits rasterchange.
           this.setEngine(DEFAULT_ENGINE);
@@ -806,14 +814,20 @@ export class LayerManager {
     );
   }
 
-  /** Opens (or reuses) a mosaic asset's GeoTIFF header. A failed open is
-   * evicted so a later viewport pass can retry it. */
-  private _openMosaicAsset(url: string): Promise<GeoTIFF> {
+  /** Opens (or reuses) a mosaic asset's GeoTIFF header.
+   *
+   * A failed open resolves to null and is evicted from the cache — never
+   * rejects. MosaicLayer wraps this in its tile `getTileData`; a rejection
+   * there leaves deck.gl calling `renderSubLayers` with null tile content,
+   * which the layer destructures unguarded and crashes on. Resolving null makes
+   * the tile render nothing, and the eviction lets a later viewport pass retry
+   * (e.g. after a transient CORS/network failure). */
+  private _openMosaicAsset(url: string): Promise<GeoTIFF | null> {
     let opened = this._mosaicGeotiffs.get(url);
     if (!opened) {
-      opened = this._deps.loadGeoTIFF(url).catch((err: unknown) => {
+      opened = this._deps.loadGeoTIFF(url).catch(() => {
         this._mosaicGeotiffs.delete(url);
-        throw err instanceof Error ? err : new Error(String(err));
+        return null;
       });
       this._mosaicGeotiffs.set(url, opened);
     }
@@ -1070,8 +1084,8 @@ export class LayerManager {
         (l) =>
           l.state.visible &&
           !this._crsFailed.has(l.id) &&
-          (l.mosaicKind === 'mosaicjson' ||
-            (!!l.geotiff && l.source.kind === 'url' && !l.members)),
+          l.source.kind === 'url' &&
+          (l.mosaicKind === 'mosaicjson' || (!!l.geotiff && !l.members)),
       )
       .map((l) => ({
         id: l.id,
@@ -1439,7 +1453,10 @@ export class LayerManager {
       id: `${layer.id}${bandTag}`,
       sources,
       getSource: (source: Source) => this._openMosaicAsset(source.url),
-      renderSource: (source: Source, opts: { data?: GeoTIFF }): Layer | null => {
+      renderSource: (
+        source: Source,
+        opts: { data?: GeoTIFF | null },
+      ): Layer | null => {
         if (!opts.data) return null;
         return new WebMercatorCOGLayer<MultiBandTileData>({
           id: `${layer.id}::mosaic::${source.url}${bandTag}`,
@@ -1467,7 +1484,7 @@ export class LayerManager {
       maxCacheSize: 0,
       beforeId: this._resolveBeforeId(layer.beforeId),
     };
-    return new MosaicLayer<Source, GeoTIFF>(props);
+    return new MosaicLayer<Source, GeoTIFF | null>(props);
   }
 
   private _buildCogLayer(

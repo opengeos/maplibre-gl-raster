@@ -39,8 +39,10 @@ export class AddDataSection {
    */
   constructor(options: AddDataSectionOptions) {
     // The accept attribute is advisory (and drag-drop bypasses it entirely),
-    // so filter by extension before handing files to the raster loader.
-    const isRaster = (file: File): boolean => /\.(tiff?|vrt)$/i.test(file.name);
+    // so filter by extension before handing files to the raster loader. A
+    // `.json` is a mosaic manifest (MosaicJSON or STAC FeatureCollection).
+    const isRaster = (file: File): boolean =>
+      /\.(tiff?|vrt|json)$/i.test(file.name);
     // Hand every raster in a selection/drop to the loader, in order.
     const addFiles = (files: FileList | null | undefined): void => {
       if (!files) return;
@@ -184,7 +186,7 @@ export class AddDataSection {
     const fileInput = el('input', {
       type: 'file',
       ariaLabel: 'raster-file',
-      attrs: { accept: '.tif,.tiff,.vrt', multiple: '' },
+      attrs: { accept: '.tif,.tiff,.vrt,.json', multiple: '' },
     });
     fileInput.style.display = 'none';
     fileInput.addEventListener('change', () => {
@@ -196,7 +198,7 @@ export class AddDataSection {
       'div',
       {
         className: 'mlr-drop-zone',
-        text: 'Drop .tif or .vrt files here, or click to browse',
+        text: 'Drop .tif, .vrt, or .json files here, or click to browse',
         attrs: { role: 'button', tabindex: '0' },
       },
       fileInput,
