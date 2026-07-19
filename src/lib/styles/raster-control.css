@@ -456,6 +456,23 @@
   display: none;
 }
 
+/* TiTiler endpoint input, revealed only while the titiler engine is active. */
+.mlr-engine-endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.mlr-engine-endpoint[hidden] {
+  display: none;
+}
+
+.mlr-engine-endpoint > .mlr-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .mlr-row {
   display: flex;
   gap: 6px;

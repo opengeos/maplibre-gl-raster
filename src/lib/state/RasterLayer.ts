@@ -81,6 +81,9 @@ export interface RasterLayer {
   /** Member COGs when this layer came from a mosaic VRT, in VRT source order.
    * Null for a plain single-file raster. */
   members: RasterMember[] | null;
+  /** True when the source is a MosaicJSON manifest (rendered only by the
+   * `titiler` engine, with no local GeoTIFF). See `raster/titiler.ts`. */
+  isMosaicJson: boolean;
   autoStats: AutoStats | null;
   bandCount: number | null;
   bandNames: globalThis.Map<number, string> | null;

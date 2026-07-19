@@ -11,6 +11,7 @@ A MapLibre GL JS plugin for visualizing local and remote raster datasets (GeoTIF
 
 - **Local and remote rasters** - Load Cloud Optimized GeoTIFFs from any CORS-enabled URL, or drag-and-drop local GeoTIFF files
 - **Mosaic VRTs** - Load a `.vrt` that mosaics COGs; its sources are rendered as one layer with a single shared stretch ([details and limits](#mosaic-vrt-support))
+- **Three rendering backends** - Switch at runtime between the deck.gl GPU pipeline (default), a serverless WASM tiler, and a remote [TiTiler](https://developmentseed.org/titiler/) server; TiTiler additionally renders [MosaicJSON](https://developmentseed.org/titiler/examples/notebooks/Working_with_MosaicJSON) ([details](#rendering-engines))
 - **Multiple layers** - Layer list with visibility toggles, reordering, zoom-to, and per-layer settings
 - **GPU rendering pipeline** - Band compositing, per-band rescale, 90+ colormaps, nodata filtering, linear/sqrt/log stretch, and gamma correction as deck.gl shader modules; parameter changes re-render without re-fetching tiles
 - **Auto statistics** - Per-band min/max and histograms sampled from COG overviews (or GDAL metadata), with draggable histogram handles for the rescale range
@@ -119,10 +120,11 @@ The main control class implementing MapLibre's `IControl` interface.
 | `sampleDataLabel` | `string` | `'Load sample data...'` | Placeholder shown in the sample-data dropdown |
 | `closeOnOutsideClick` | `boolean` | `true` | Collapse the panel when clicking outside it; set `false` to close only via the header button |
 | `engine`      | `RenderEngine` | `'maplibre-gl-raster'` | Initial rendering backend; switchable at runtime from the panel    |
+| `titilerEndpoint` | `string` | `'https://titiler.d2s.org'` | TiTiler instance used by the `'titiler'` engine (COG + MosaicJSON) |
 
 #### Raster Methods
 
-- `addRaster(source, options?)` - Add a raster from a COG or [mosaic `.vrt`](#mosaic-vrt-support) URL (`string`), or a local GeoTIFF / `.vrt` `File` (a local `.vrt` must name its sources as absolute URLs); resolves with the layer id
+- `addRaster(source, options?)` - Add a raster from a COG, [mosaic `.vrt`](#mosaic-vrt-support), or [MosaicJSON](#rendering-engines) `.json` URL (`string`), or a local GeoTIFF / `.vrt` `File` (a local `.vrt` must name its sources as absolute URLs); resolves with the layer id. A MosaicJSON URL renders through the [`titiler`](#rendering-engines) engine (selected automatically)
 - `removeRaster(id)` - Remove a raster layer
 - `getRaster(id)` / `getRasters()` - Get layer snapshots (`RasterLayerInfo`); for a mosaic VRT, `memberUrls` lists the COGs it expanded to
 - `setRasterState(id, patch)` - Update visualization state (mode, bands, rescale, colormap, reversed, nodata, opacity, gamma, stretch, visible)
@@ -161,6 +163,44 @@ layer:
   MapLibre custom protocol. Tiles are rendered on the CPU and served as native
   MapLibre raster layers. The panel's settings (bands, rescale, colormap,
   curve, gamma, nodata, opacity) map directly onto its render parameters.
+- **`titiler`** - a server-side dynamic tiler
+  ([TiTiler](https://developmentseed.org/titiler/)). Tiles are rendered by a
+  remote TiTiler instance and drawn as native MapLibre raster layers, so
+  nothing is decoded in the browser. It is the **only engine that can render a
+  [MosaicJSON](https://developmentseed.org/titiler/examples/notebooks/Working_with_MosaicJSON)**
+  (a `.json` manifest of many COGs) - just paste the manifest URL and it loads
+  through TiTiler's `/mosaicjson` router; adding one selects this engine
+  automatically. Bands, rescale, colormap, and a numeric nodata map onto
+  TiTiler's tile parameters (index mode uses a server-side band-math
+  `expression`, so the real normalized-difference index is rendered). The
+  `stretch` and `gamma` controls have no standard TiTiler parameter and are
+  ignored. Only remote sources work (TiTiler reads over HTTP), so local files
+  and `.vrt` mosaics render on the other engines.
+
+  The default instance is `https://titiler.d2s.org`; point it at your own
+  deployment with the `titilerEndpoint` option, the `setTitilerEndpoint()` API,
+  or the **TiTiler server** input the panel shows while the `titiler` engine is
+  selected (clearing it restores the default):
+
+  ```typescript
+  const control = new RasterControl({
+    engine: "titiler",
+    titilerEndpoint: "https://titiler.example.com",
+  });
+  // Render a COG, or a MosaicJSON (auto-selects the titiler engine):
+  await control.addRaster("https://example.com/mosaic.json");
+  // Switch the server at runtime (the panel input stays in sync):
+  control.setTitilerEndpoint("https://titiler.xyz");
+  ```
+
+  > The TiTiler server must be able to read the source. A MosaicJSON whose
+  > assets are `s3://…` paths only renders on a TiTiler configured for that
+  > bucket (e.g. `AWS_NO_SIGN_REQUEST=YES` for public data); the public
+  > `titiler.xyz` handles many such buckets. Because TiTiler is a *dynamic*
+  > tiler, the plugin does not cap the MapLibre source at the mosaic's
+  > advertised `minzoom` (that would leave a small, high-resolution source
+  > blank until you zoomed in) - instead the initial fit is floored to that
+  > zoom so the view lands where tiles exist.
 
 `cog-tiler-wasm` is an **optional peer dependency**, loaded lazily the first
 time the engine is selected, so it never enters the default bundle. To use it,

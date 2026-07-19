@@ -13,10 +13,18 @@ export type RasterMode = 'rgb' | 'single' | 'index';
  *   a shared `MapboxOverlay`).
  * - `'cog-tiler-wasm'` — a serverless CPU/WASM tiler ([cog-tiler-wasm](https://github.com/opengeos/cog-tiler-wasm))
  *   wired to a MapLibre custom protocol; loaded lazily on first use.
+ * - `'titiler'` — a server-side dynamic tiler ([TiTiler](https://developmentseed.org/titiler/)):
+ *   tiles are rendered by a remote TiTiler instance and drawn as a native
+ *   MapLibre raster layer. It is the only engine that can render a MosaicJSON
+ *   (the others read a single GeoTIFF header). Configure the instance with
+ *   {@link RasterControlOptions.titilerEndpoint}.
  *
  * The choice is global (it applies to every layer), not per-layer.
  */
-export type RenderEngine = 'maplibre-gl-raster' | 'cog-tiler-wasm';
+export type RenderEngine =
+  | 'maplibre-gl-raster'
+  | 'cog-tiler-wasm'
+  | 'titiler';
 
 /**
  * Per-layer colorbar legend config. When `visible`, the control shows a
@@ -220,6 +228,14 @@ export interface RasterControlOptions {
    * @default 'maplibre-gl-raster'
    */
   engine?: RenderEngine;
+
+  /**
+   * Base URL of the TiTiler instance used by the `'titiler'` rendering engine.
+   * Any deployment exposing the standard `/cog` and `/mosaicjson` routers
+   * works. Ignored by the other engines.
+   * @default 'https://titiler.d2s.org'
+   */
+  titilerEndpoint?: string;
 
   /**
    * Prefills the "Add data" URL input with this COG URL. The raster is only
