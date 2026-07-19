@@ -1,6 +1,7 @@
 import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
 import type { CogSource, RenderOptions } from 'cog-tiler-wasm';
 import type { GeographicBounds, RasterLayerState } from '../core/types';
+import type { MosaicAsset } from '../raster/mosaic';
 import { autoRangeFor, statsForBand } from '../raster/render-pipeline';
 import type { AutoStats } from '../raster/stats';
 import { PALETTE_COLORMAP } from '../ui/ColormapPicker';
@@ -11,8 +12,17 @@ export type CogTilerModule = typeof import('cog-tiler-wasm');
 /** A layer the engine should render, projected from a managed RasterLayer. */
 export interface CogEngineLayer {
   id: string;
-  /** Remote COG URL, or a local File for in-memory reads. */
+  /** Remote COG URL, or a local File for in-memory reads. For a mosaic layer
+   * this is the manifest URL, used only as the cache identity — the pixels come
+   * from {@link assets}. */
   source: string | File;
+  /** The mosaic's member COGs (URL + WGS84 bbox) when this layer came from a
+   * MosaicJSON or STAC manifest, else null. Present means the tile handler
+   * composites the covering assets per tile instead of reading one COG. */
+  assets?: MosaicAsset[] | null;
+  /** Zoom below which a large mosaic is hidden, mirroring the deck.gl engine so
+   * a world view never opens every asset at once. */
+  minzoom?: number | null;
   state: RasterLayerState;
   autoStats: AutoStats | null;
   /** Style layer id to insert the raster beneath, when present. */
@@ -38,6 +48,81 @@ export interface CogTilerEngineDeps {
 
 /** A blank tile: cog-tiler returns an empty buffer for tiles outside the COG. */
 const EMPTY_TILE = new Uint8Array(0);
+
+/** Upper bound on how many mosaic assets one tile will composite.
+ *
+ * Deliberately high: this is a runaway guard for a pathological manifest, not a
+ * routine limit. A zoomed-out tile legitimately spans every asset of a modest
+ * mosaic (all 45 of the NAIP sample at z3), and truncating there would drop
+ * real imagery from the picture. Cost stays bounded because low zoom has very
+ * few tiles, high zoom exits early once a tile is opaque, and
+ * {@link ASSET_CONCURRENCY} caps decodes in flight. Passing it is logged rather
+ * than silently truncating. */
+const MAX_TILE_ASSETS = 512;
+
+/** How many assets a single tile opens/renders at once. Each is a CPU decode in
+ * wasm, so a burst of tiles times a burst of assets would otherwise saturate the
+ * main thread and stall the map. */
+const ASSET_CONCURRENCY = 4;
+
+/** The WGS84 bounds of an XYZ tile, as `[west, south, east, north]`. */
+function tileBBox(
+  z: number,
+  x: number,
+  y: number,
+): [number, number, number, number] {
+  const n = 2 ** z;
+  const lng = (i: number) => (i / n) * 360 - 180;
+  const lat = (j: number) => {
+    const t = Math.PI * (1 - (2 * j) / n);
+    return (Math.atan(Math.sinh(t)) * 180) / Math.PI;
+  };
+  return [lng(x), lat(y + 1), lng(x + 1), lat(y)];
+}
+
+/** True when two `[west, south, east, north]` boxes overlap (edges included). */
+function bboxIntersects(
+  a: [number, number, number, number],
+  b: [number, number, number, number],
+): boolean {
+  return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+}
+
+/**
+ * Paints `src` under whatever `dst` already holds, in place.
+ *
+ * "Under", not over: assets are composited in manifest order and the first one
+ * covering a pixel keeps it, which matches how the pixel inspector picks the
+ * asset it reports (see `assetsAt`). A mosaic's assets are drawn in whatever
+ * order its spatial index yields, so no order is authoritative — being
+ * self-consistent with the inspector is what matters, so the value shown on
+ * click is the value drawn.
+ *
+ * Only fully transparent destination pixels are filled. Mosaic assets are
+ * opaque inside their footprint and transparent outside it (verified against
+ * `renderTileRGBA`, which returns null for a tile entirely outside a COG), so
+ * partial alpha never arises in practice and true blending is not needed.
+ *
+ * @returns Whether `dst` is now fully opaque, so remaining assets can be skipped
+ */
+function paintUnder(
+  dst: Uint8ClampedArray,
+  src: Uint8Array | Uint8ClampedArray,
+): boolean {
+  let complete = true;
+  for (let i = 3; i < dst.length; i += 4) {
+    if (dst[i] !== 0) continue;
+    if (src[i] === 0) {
+      complete = false;
+      continue;
+    }
+    dst[i - 3] = src[i - 3];
+    dst[i - 2] = src[i - 2];
+    dst[i - 1] = src[i - 1];
+    dst[i] = src[i];
+  }
+  return complete;
+}
 
 /** Per-instance protocol scheme counter so multiple controls never collide on a
  * single global MapLibre protocol registration. */
@@ -72,11 +157,19 @@ export class CogTilerEngine {
   /** The most recent desired layer set; re-applied after async work settles. */
   private _layers: CogEngineLayer[] = [];
   private _sources = new Map<string, SourceEntry>();
-  /** Render settings the protocol handler reads per tile, by layer id. */
+  /** Render settings the protocol handler reads per tile, by layer id. A mosaic
+   * layer carries `assets` instead of a single opened `source`. */
   private _registry = new Map<
     string,
-    { source: CogSource; render: RenderOptions }
+    {
+      source: CogSource | null;
+      assets: MosaicAsset[] | null;
+      render: RenderOptions;
+    }
   >();
+  /** Opened mosaic assets by COG URL, shared across layers and tiles. A failed
+   * open resolves null and is evicted so a later tile can retry. */
+  private _assetSources = new Map<string, Promise<CogSource | null>>();
   /** Last applied render key per layer, to know when to bust the tile cache. */
   private _applied = new Map<string, string>();
   /** Monotonic tile-URL version per layer, bumped to refetch on settings edits. */
@@ -125,6 +218,7 @@ export class CogTilerEngine {
       this._protocolRegistered = false;
     }
     this._sources.clear();
+    this._assetSources.clear();
     this._versions.clear();
   }
 
@@ -221,6 +315,10 @@ export class CogTilerEngine {
       const y = Number(ys);
       const entry = this._registry.get(layerId);
       if (!entry || ![z, x, y].every(Number.isFinite)) return EMPTY_TILE;
+      if (entry.assets) {
+        return await this._renderMosaicTile(entry.assets, entry.render, z, x, y);
+      }
+      if (!entry.source) return EMPTY_TILE;
       return await entry.source.renderTilePNG(z, x, y, entry.render);
     } catch {
       // A failed tile renders blank rather than breaking the whole map.
@@ -228,10 +326,96 @@ export class CogTilerEngine {
     }
   };
 
+  /**
+   * Renders one mosaic tile by compositing every asset that covers it.
+   *
+   * Unlike a plain layer — one open COG, one `renderTilePNG` — a mosaic has no
+   * single image, so the tile is assembled here: pick the assets whose bbox
+   * meets the tile, render each to RGBA, and paint them into one buffer. Assets
+   * are opened lazily and cached by URL, so panning across a large mosaic only
+   * ever opens what the viewport actually touched.
+   *
+   * Work stops as soon as the tile is fully opaque, which is the common case
+   * after the first asset: mosaic assets tile the plane, so most tiles fall
+   * inside exactly one.
+   */
+  private async _renderMosaicTile(
+    assets: MosaicAsset[],
+    render: RenderOptions,
+    z: number,
+    x: number,
+    y: number,
+  ): Promise<Uint8Array> {
+    const mod = this._module;
+    if (!mod) return EMPTY_TILE;
+    const tile = tileBBox(z, x, y);
+    const covering = assets.filter((a) => bboxIntersects(tile, a.bbox));
+    if (covering.length === 0) return EMPTY_TILE;
+    if (covering.length > MAX_TILE_ASSETS) {
+      // Never silently truncate: say what was dropped, so a mosaic that renders
+      // incomplete is diagnosable rather than mysterious.
+      console.warn(
+        `[maplibre-gl-raster] tile ${z}/${x}/${y} covered by ${covering.length} ` +
+          `mosaic assets; compositing the first ${MAX_TILE_ASSETS}`,
+      );
+    }
+    const candidates = covering.slice(0, MAX_TILE_ASSETS);
+
+    let dst: Uint8ClampedArray | null = null;
+    for (let i = 0; i < candidates.length; ) {
+      // The first candidate is tried alone: mosaic assets tile the plane, so it
+      // usually fills the tile and the common case costs a single decode. Only
+      // once it leaves holes (an edge tile, or assets that merely touch at a
+      // shared boundary) is it worth fanning out over the rest.
+      const width = i === 0 ? 1 : ASSET_CONCURRENCY;
+      const batch = candidates.slice(i, i + width);
+      i += width;
+      const rendered = await Promise.all(
+        batch.map(async (asset) => {
+          const source = await this._openAsset(asset.url, mod);
+          if (!source || this._destroyed) return null;
+          try {
+            return await source.renderTileRGBA(z, x, y, render);
+          } catch {
+            // One unreadable asset must not blank the whole tile.
+            return null;
+          }
+        }),
+      );
+      for (const rgba of rendered) {
+        if (!rgba) continue;
+        if (!dst) dst = new Uint8ClampedArray(rgba.length);
+        else if (rgba.length !== dst.length) continue;
+        if (paintUnder(dst, rgba)) return mod.rgbaToPng(dst);
+      }
+    }
+    if (!dst) return EMPTY_TILE;
+    return mod.rgbaToPng(dst);
+  }
+
+  /** Opens (or reuses) a mosaic asset's COG. Resolves null on failure and drops
+   * the cache entry so a later tile can retry a transient error. */
+  private _openAsset(
+    url: string,
+    mod: CogTilerModule,
+  ): Promise<CogSource | null> {
+    let opened = this._assetSources.get(url);
+    if (!opened) {
+      opened = mod.openCog(url).catch(() => {
+        this._assetSources.delete(url);
+        return null;
+      });
+      this._assetSources.set(url, opened);
+    }
+    return opened;
+  }
+
   /** Opens (or reuses) the layer's source and adds/updates its raster layer. */
   private _applyLayer(layer: CogEngineLayer, mod: CogTilerModule): void {
-    const entry = this._ensureSource(layer, mod);
-    if (!entry.source) return; // still opening; _apply re-runs on resolve
+    // A mosaic opens nothing up front: its extent comes from the manifest (the
+    // manager already has it) and its assets open per tile, on demand.
+    const entry = layer.assets ? null : this._ensureSource(layer, mod);
+    if (entry && !entry.source) return; // still opening; _apply re-runs on resolve
     const render = this._renderOptionsFor(layer);
     const renderKey = JSON.stringify(render);
 
@@ -249,7 +433,11 @@ export class CogTilerEngine {
     // Register the render settings AFTER any remove/add cycle: _removeMapLayer
     // clears the registry, and the protocol handler reads it per tile, so a
     // stale-cleared entry would make every tile render blank.
-    this._registry.set(layer.id, { source: entry.source, render });
+    this._registry.set(layer.id, {
+      source: entry?.source ?? null,
+      assets: layer.assets ?? null,
+      render,
+    });
     // Opacity is a cheap paint change that never needs a tile refetch.
     if (this._map.getLayer(lyrId)) {
       this._map.setPaintProperty(lyrId, 'raster-opacity', layer.state.opacity);
@@ -274,6 +462,10 @@ export class CogTilerEngine {
       type: 'raster',
       tiles: [`${this._protocol}://${layer.id}/{z}/{x}/{y}?v=${version}`],
       tileSize: 256,
+      // A large mosaic hides below the zoom where a single tile would span most
+      // of it, so a zoomed-out view never composites every asset at once. Same
+      // guard the deck.gl engine applies via MosaicLayer's minZoom.
+      ...(layer.minzoom != null ? { minzoom: Math.floor(layer.minzoom) } : {}),
     });
     this._map.addLayer(
       {

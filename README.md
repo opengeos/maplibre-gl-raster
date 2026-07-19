@@ -125,7 +125,7 @@ The main control class implementing MapLibre's `IControl` interface.
 
 #### Raster Methods
 
-- `addRaster(source, options?)` - Add a raster from a COG, [mosaic `.vrt`](#mosaic-vrt-support), or [mosaic `.json`](#rendering-engines) (MosaicJSON or STAC `FeatureCollection`) URL (`string`), or a local GeoTIFF / `.vrt` `File` (a local `.vrt` must name its sources as absolute URLs); resolves with the layer id. A mosaic `.json` renders on the deck.gl engine by default (a MosaicJSON can also render on [`titiler`](#rendering-engines))
+- `addRaster(source, options?)` - Add a raster from a COG, [mosaic `.vrt`](#mosaic-vrt-support), or [mosaic `.json`](#rendering-engines) (MosaicJSON or STAC `FeatureCollection`) URL (`string`), or a local GeoTIFF / `.vrt` `File` (a local `.vrt` must name its sources as absolute URLs); resolves with the layer id. A mosaic `.json` renders on the deck.gl engine by default, and also on [`cog-tiler-wasm`](#rendering-engines) (a MosaicJSON additionally on [`titiler`](#rendering-engines))
 - `removeRaster(id)` - Remove a raster layer
 - `getRaster(id)` / `getRasters()` - Get layer snapshots (`RasterLayerInfo`); for a mosaic VRT, `memberUrls` lists the COGs it expanded to
 - `setRasterState(id, patch)` - Update visualization state (mode, bands, rescale, colormap, reversed, nodata, opacity, gamma, stretch, visible)
@@ -255,9 +255,13 @@ file.
 On the default **`maplibre-gl-raster`** engine the mosaic is a deck.gl
 `MosaicLayer`: a spatial index culls to the viewport and renders one on-GPU
 `COGLayer` per visible asset (each read directly over HTTP and reprojected by
-its own header), all sharing one visualization state. A **MosaicJSON** can also
-render on the **`titiler`** engine (server-side); a **STAC** mosaic renders on
-deck.gl only. Adding a mosaic keeps the active engine when it can draw it, and
+its own header), all sharing one visualization state. Both mosaic kinds also
+render on the **`cog-tiler-wasm`** engine, which composites them per tile: for
+each tile it picks the assets whose bbox covers it, decodes each on the CPU, and
+paints them into one tile (stopping as soon as the tile is opaque, so a tile
+inside a single asset costs one decode). A **MosaicJSON** can additionally render
+on the **`titiler`** engine (server-side); a **STAC** mosaic has no TiTiler
+equivalent. Adding a mosaic keeps the active engine when it can draw it, and
 otherwise falls back to the deck.gl engine.
 
 A large mosaic (more than ~48 assets) opens on a capped, centred view and hides
