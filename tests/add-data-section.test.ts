@@ -26,7 +26,7 @@ describe('AddDataSection local files', () => {
     expect(input.multiple).toBe(true);
   });
 
-  it('adds every selected .tif file, skipping non-tiff files', () => {
+  it('adds raster and mosaic files (.tif/.vrt/.json), skipping other files', () => {
     const { section, onAddFile } = createSection();
     const input = section.el.querySelector<HTMLInputElement>(
       'input[aria-label=raster-file]',
@@ -34,19 +34,27 @@ describe('AddDataSection local files', () => {
 
     Object.defineProperty(input, 'files', {
       configurable: true,
-      value: [tiff('a.tif'), tiff('b.tiff'), new File([''], 'notes.txt')],
+      value: [
+        tiff('a.tif'),
+        tiff('b.tiff'),
+        new File([''], 'mosaic.vrt'),
+        new File([''], 'items.json'),
+        new File([''], 'notes.txt'),
+      ],
     });
     input.dispatchEvent(new Event('change'));
 
-    expect(onAddFile).toHaveBeenCalledTimes(2);
-    expect(onAddFile).toHaveBeenNthCalledWith(
-      1,
-      expect.any(File),
-      undefined,
-      undefined,
-    );
-    expect((onAddFile.mock.calls[0][0] as File).name).toBe('a.tif');
-    expect((onAddFile.mock.calls[1][0] as File).name).toBe('b.tiff');
+    // The .txt is skipped; the .tif/.tiff/.vrt/.json are all added in order.
+    expect(onAddFile).toHaveBeenCalledTimes(4);
+    expect(onAddFile.mock.calls.map((c) => (c[0] as File).name)).toEqual([
+      'a.tif',
+      'b.tiff',
+      'mosaic.vrt',
+      'items.json',
+    ]);
+    // The picker advertises the mosaic extensions too.
+    expect(input.accept).toContain('.json');
+    expect(input.accept).toContain('.vrt');
     // Selection is cleared so re-picking the same files fires again.
     expect(input.value).toBe('');
   });

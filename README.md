@@ -214,7 +214,19 @@ shapes are accepted:
 ```typescript
 // Renders on the deck.gl engine by default:
 await control.addRaster("https://example.com/mosaic.json");
-await control.addRaster("https://example.com/stac-items.json");
+await control.addRaster(
+  "https://data.source.coop/giswqs/opengeos/naip_water_train_stac.json",
+);
+```
+
+To build a STAC `FeatureCollection` from your own COGs (local or remote), use
+the `make_stac.py` helper in this repo:
+
+```bash
+# A directory of local COGs, hosted under a public base URL:
+python make_stac.py ./tiles -o mosaic.json --href-base https://data.example.com/tiles
+# ...or explicit remote COG URLs (add --full for complete STAC Items):
+python make_stac.py https://data.example.com/a.tif https://data.example.com/b.tif -o mosaic.json
 ```
 
 On the default **`maplibre-gl-raster`** engine the mosaic is a deck.gl

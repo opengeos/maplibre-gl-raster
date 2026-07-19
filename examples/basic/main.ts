@@ -26,6 +26,11 @@ const SAMPLE_COGS = [
     url: 'https://data.source.coop/giswqs/opengeos/naip_water_train.vrt',
     attribution: 'USDA National Agriculture Imagery Program (NAIP)',
   },
+  {
+    label: 'NAIP aerial imagery (STAC mosaic)',
+    url: 'https://data.source.coop/giswqs/opengeos/naip_water_train_stac.json',
+    attribution: 'USDA National Agriculture Imagery Program (NAIP)',
+  },
 ];
 
 // Create map
