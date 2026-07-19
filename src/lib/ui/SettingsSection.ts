@@ -194,19 +194,28 @@ export class SettingsSection {
    * full re-renders this section performs on every structural change. */
   private _rescaleOpen = true;
 
+  /** Colormaps the active engine can draw, or null for all. Re-read on every
+   * render, so switching engines renarrows the picker. */
+  private _getAllowedColormaps: () => ReadonlySet<string> | null;
+
   /**
    * Creates the section.
    *
    * @param getLayer - Returns the currently selected layer (or null)
    * @param setState - Applies a state patch to the selected layer
+   * @param inspect - Pixel-inspect hooks for the Inspect button
+   * @param getAllowedColormaps - Returns the colormaps the active engine can
+   *   render, or null when every colormap is drawable
    */
   constructor(
     getLayer: () => RasterLayer | null,
     setState: (patch: Partial<RasterLayerState>) => void,
     inspect?: InspectHooks,
+    getAllowedColormaps?: () => ReadonlySet<string> | null,
   ) {
     this._getLayer = getLayer;
     this._inspect = inspect ?? null;
+    this._getAllowedColormaps = getAllowedColormaps ?? (() => null);
     this._setState = (patch) => {
       this._applying = true;
       try {
@@ -349,6 +358,7 @@ export class SettingsSection {
           mode === 'single'
             ? statsForBand(layer.autoStats, state.bands[0] ?? 1)
             : null,
+        allowed: this._getAllowedColormaps(),
         onChange: (name) => {
           this._setState({ colormap: name });
           // Switching to/from the palette shows/hides rescale-curve-gamma.

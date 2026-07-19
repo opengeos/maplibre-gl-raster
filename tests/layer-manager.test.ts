@@ -19,7 +19,7 @@ function makeFakeTiff(count = 3, isTiled = true): GeoTIFF {
 }
 
 /** A minimal fake cog-tiler-wasm module for the engine-selection tests. */
-function makeFakeCogModule() {
+function makeFakeCogModule(colormaps: string[] = []) {
   const source = {
     mode: '3857' as const,
     crsLabel: 'EPSG:3857',
@@ -31,7 +31,9 @@ function makeFakeCogModule() {
   return {
     init: vi.fn(async () => undefined),
     openCog: vi.fn(async () => source),
-    colormaps: () => [],
+    // The real module reports the ramps compiled into its wasm; an empty list
+    // stands for a build that predates colormaps().
+    colormaps: () => colormaps,
   };
 }
 
@@ -53,6 +55,8 @@ function makeHarness(opts?: {
   notTiled?: boolean;
   epsgResolver?: LayerManagerDeps['epsgResolver'];
   engine?: 'maplibre-gl-raster' | 'cog-tiler-wasm';
+  /** Colormaps the fake wasm module reports; empty stands for an older build. */
+  cogColormaps?: string[];
 }) {
   const setProps = vi.fn();
   const overlay: OverlayLike = { setProps };
@@ -74,7 +78,9 @@ function makeHarness(opts?: {
     off: vi.fn(),
   } as unknown as MapLibreMap;
 
-  const loadCogTiler = vi.fn(async () => makeFakeCogModule());
+  const loadCogTiler = vi.fn(async () =>
+    makeFakeCogModule(opts?.cogColormaps ?? []),
+  );
   const deps: Partial<LayerManagerDeps> = {
     loadGeoTIFF: vi.fn(async (url: string) => {
       if (opts?.failLoad) throw new Error(`load failed: ${url}`);
@@ -671,6 +677,65 @@ describe('LayerManager engine selection', () => {
   it('defaults to the maplibre-gl-raster (deck.gl) engine', () => {
     const { manager } = makeHarness();
     expect(manager.engine).toBe('maplibre-gl-raster');
+  });
+
+  it('reports the colormaps the active engine can render', () => {
+    const { manager } = makeHarness();
+    // deck.gl draws the whole sprite, so nothing is restricted.
+    expect(manager.supportedColormaps).toBeNull();
+
+    // cog-tiler-wasm knows only a fixed set and renders an unknown name with
+    // its gray ramp instead of the requested one, so the panel must narrow the
+    // picker to these. Before the wasm module loads, the conservative baseline
+    // applies.
+    manager.setEngine('cog-tiler-wasm');
+    const allowed = manager.supportedColormaps;
+    expect(allowed).not.toBeNull();
+    expect(allowed!.has('viridis')).toBe(true);
+    expect(allowed!.has('turbo')).toBe(true);
+    expect(allowed!.has('gray')).toBe(true);
+    expect(allowed!.has('jet')).toBe(false);
+    expect(allowed!.size).toBeLessThan(20);
+
+    // TiTiler resolves colormap names server-side; nothing is restricted.
+    manager.setEngine('titiler');
+    expect(manager.supportedColormaps).toBeNull();
+  });
+
+  it('widens the colormap set to whatever the loaded wasm module reports', async () => {
+    // The set is read from the module, not hard-coded, so a cog-tiler-wasm
+    // release that adds ramps widens the picker with no change here — and the
+    // two packages never have to be upgraded in lockstep.
+    const { manager, events } = makeHarness({
+      engine: 'cog-tiler-wasm',
+      cogColormaps: ['viridis', 'jet', 'rdbu', 'gray'],
+    });
+    // Baseline until the module resolves.
+    expect(manager.supportedColormaps!.has('jet')).toBe(false);
+
+    await manager.addRaster('https://example.com/a.tif');
+    await vi.waitFor(() =>
+      expect(manager.supportedColormaps!.has('jet')).toBe(true),
+    );
+
+    const allowed = manager.supportedColormaps!;
+    expect(allowed.has('viridis')).toBe(true);
+    expect(allowed.has('rdbu')).toBe(true);
+    // Loading the module must re-emit, or the panel would keep showing the
+    // baseline picker until some unrelated change forced a re-render.
+    expect(events.some((e) => e.type === 'rasterchange')).toBe(true);
+  });
+
+  it('keeps the baseline when the module reports no colormaps', async () => {
+    // An older module without colormaps(), or one returning an empty list, must
+    // not collapse the picker to nothing.
+    const { manager } = makeHarness({ engine: 'cog-tiler-wasm' });
+    await manager.addRaster('https://example.com/a.tif');
+
+    const allowed = manager.supportedColormaps!;
+    expect(allowed.has('viridis')).toBe(true);
+    expect(allowed.has('jet')).toBe(false);
+    expect(allowed.size).toBeGreaterThan(0);
   });
 
   it('renders through the cog-tiler-wasm engine when configured, skipping the deck overlay', async () => {

@@ -2,7 +2,7 @@ import {
   COLORMAP_SPRITE_WIDTH as SPRITE_WIDTH,
   loadColormapSprite as loadSprite,
 } from '../raster/colormap-sampler';
-import { COLORMAP_OPTIONS } from '../raster/colormaps';
+import { colormapDisplayName, COLORMAP_OPTIONS } from '../raster/colormaps';
 import type { BandStats } from '../raster/stats';
 import { el, select } from './dom';
 
@@ -22,6 +22,11 @@ export type ColormapPickerOptions = {
    * preview is restricted to index values that actually occur in the data
    * (land-cover palettes typically use a handful of the 256 entries). */
   stats?: BandStats | null;
+  /** Colormap names the active rendering engine can draw. When set, the list is
+   * narrowed to these so the user cannot pick a ramp the engine would not
+   * render. Null/omitted offers every colormap. See
+   * {@link import('../state/LayerManager').LayerManager.supportedColormaps}. */
+  allowed?: ReadonlySet<string> | null;
 };
 
 /**
@@ -83,11 +88,32 @@ export class ColormapPicker {
     this._palette = options.palette ?? null;
     this._stats = options.stats ?? null;
 
+    const allowed = options.allowed;
+    const named = COLORMAP_OPTIONS.filter(
+      (o) => !allowed || allowed.has(o.name),
+    ).map((o) => ({ value: o.name, label: o.label }));
+    // Keep the active colormap listed even when the engine cannot draw it (a
+    // layer styled on another engine, then switched), flagged so the reason the
+    // map looks wrong is visible rather than the select silently snapping to
+    // some other entry.
+    const unsupported =
+      allowed &&
+      options.value &&
+      options.value !== PALETTE_COLORMAP &&
+      !allowed.has(options.value)
+        ? [
+            {
+              value: options.value,
+              label: `${colormapDisplayName(options.value)} (not supported by this engine)`,
+            },
+          ]
+        : [];
     const selectOptions = [
       ...(this._palette
         ? [{ value: PALETTE_COLORMAP, label: 'Image palette (default)' }]
         : []),
-      ...COLORMAP_OPTIONS.map((o) => ({ value: o.name, label: o.label })),
+      ...unsupported,
+      ...named,
     ];
     this._select = select(
       selectOptions,
