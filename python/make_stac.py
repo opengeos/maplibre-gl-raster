@@ -20,17 +20,17 @@ downloaded in full.
 Examples
 --------
     # A directory of local COGs, hosted under a public base URL:
-    python make_stac.py ./tiles -o tiles.json \
+    python python/make_stac.py ./tiles -o tiles.json \
         --href-base https://data.example.com/tiles
 
     # Explicit remote COGs:
-    python make_stac.py \
+    python python/make_stac.py \
         https://data.source.coop/giswqs/opengeos/tiles/naip_water_train_r0c0.tif \
         https://data.source.coop/giswqs/opengeos/tiles/naip_water_train_r0c1.tif \
         -o naip.json
 
     # A whole S3 prefix (requires the AWS_* env for private buckets):
-    python make_stac.py "s3://my-bucket/cogs/*.tif" -o cogs.json
+    python python/make_stac.py "s3://my-bucket/cogs/*.tif" -o cogs.json
 
 Requires ``rasterio`` (``pip install rasterio``).
 """
@@ -54,7 +54,9 @@ def _require_rasterio():
 
         return rasterio, transform_bounds
     except ImportError:  # pragma: no cover - dependency hint
-        sys.exit("This script needs rasterio. Install it with:\n    pip install rasterio")
+        sys.exit(
+            "This script needs rasterio. Install it with:\n    pip install rasterio"
+        )
 
 
 COG_MEDIA_TYPE = "image/tiff; application=geotiff; profile=cloud-optimized"
@@ -120,7 +122,7 @@ def _expand_s3_glob(pattern: str) -> list[str]:
     """
     from fnmatch import fnmatch
 
-    key = pattern[len("s3://"):]
+    key = pattern[len("s3://") :]
     bucket, _, key_prefix = key.partition("/")
     dir_key = os.path.dirname(key_prefix)
     want = os.path.basename(pattern)
@@ -195,9 +197,7 @@ def build_feature(
                 if (args.full and src.crs and src.crs.is_projected)
                 else None
             )
-            colorinterp = (
-                tuple(ci.name for ci in src.colorinterp) if args.full else ()
-            )
+            colorinterp = tuple(ci.name for ci in src.colorinterp) if args.full else ()
     except Exception as exc:  # noqa: BLE001 - report and skip a bad source
         print(f"warning: skipping '{path}' ({exc})", file=sys.stderr)
         return None
@@ -335,6 +335,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=2,
         help="JSON indent (default: 2).",
     )
+    p.add_argument(
+        "--compact",
+        action="store_true",
+        help="Write the whole document on one line with no space after "
+        "separators — the smallest file, and the shape the deck.gl-raster "
+        "example ships. Overrides --indent.",
+    )
     args = p.parse_args(argv)
     args.roles = [r.strip() for r in args.roles.split(",") if r.strip()]
     return args
@@ -359,7 +366,11 @@ def main(argv: list[str]) -> int:
         collection["bbox"] = [round(v, 8) for v in union_bbox(features)]
     collection["features"] = features
 
-    text = json.dumps(collection, indent=args.indent) + "\n"
+    text = (
+        json.dumps(collection, separators=(",", ":"))
+        if args.compact
+        else json.dumps(collection, indent=args.indent)
+    ) + "\n"
     if args.output == "-":
         sys.stdout.write(text)
     else:

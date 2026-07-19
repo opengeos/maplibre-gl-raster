@@ -136,10 +136,16 @@ export class RasterControl implements IControl {
 
     // Pixel inspector: reads source values of the selected layer on map click.
     const manager = this._layerManager;
-    this._inspector = new PixelInspector(map, () => {
-      const id = manager.selectedId;
-      return id ? (manager.getLayer(id) ?? null) : null;
-    });
+    this._inspector = new PixelInspector(
+      map,
+      () => {
+        const id = manager.selectedId;
+        return id ? (manager.getLayer(id) ?? null) : null;
+      },
+      // Read mosaic assets through the manager's cache, so inspecting a mosaic
+      // reuses the headers the renderer already opened.
+      { openMosaicAsset: (url) => manager.openMosaicAsset(url) },
+    );
 
     const content = this._panel.querySelector<HTMLElement>(
       '.mlr-control-content',

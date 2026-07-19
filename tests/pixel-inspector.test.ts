@@ -283,6 +283,160 @@ describe('PixelInspector', () => {
     });
   });
 
+  describe('on a mosaic manifest layer (MosaicJSON / STAC)', () => {
+    /** A two-asset mosaic layer split at lng 0. A manifest layer never opens a
+     * GeoTIFF of its own — assets are opened lazily, per viewport. */
+    function makeManifestTarget(
+      assets = [
+        { url: 'a.tif', bbox: [-10, 0, 0, 10] as [number, number, number, number] },
+        { url: 'b.tif', bbox: [0, 0, 10, 10] as [number, number, number, number] },
+      ],
+    ) {
+      return makeTarget({
+        geotiff: null,
+        members: null,
+        isMosaicJson: true,
+        mosaicKind: 'stac',
+        mosaicAssets: assets,
+      });
+    }
+
+    it('reads a mosaic asset instead of reporting the layer as still loading', async () => {
+      // Regression: a manifest layer has geotiff === null forever, which the
+      // readiness guard used to read as "not loaded yet", so every click on a
+      // STAC/MosaicJSON mosaic stuck on "Layer is still loading…".
+      const { map, emit } = makeFakeMap();
+      const target = makeManifestTarget();
+      const east = { id: 'b' } as unknown as GeoTIFF;
+      const readPixelValues = vi.fn(async () => reading);
+      const openMosaicAsset = vi.fn(async () => east);
+      const insp = new PixelInspector(map, () => target, {
+        readPixelValues,
+        openMosaicAsset,
+        createPopup: makePopup,
+      });
+
+      insp.enable();
+      emit('click', click(5, 5));
+      await flush();
+
+      // Only the covering asset is opened, and the read goes through it.
+      expect(openMosaicAsset).toHaveBeenCalledTimes(1);
+      expect(openMosaicAsset).toHaveBeenCalledWith('b.tif');
+      expect(readPixelValues).toHaveBeenCalledWith(east, [5, 5], expect.anything());
+    });
+
+    it('skips an asset that cannot be opened and tries the next', async () => {
+      // Two assets cover the click; the first fails to open (CORS, 404), which
+      // openMosaicAsset reports as null rather than throwing.
+      const { map, emit } = makeFakeMap();
+      const target = makeManifestTarget([
+        { url: 'broken.tif', bbox: [-10, 0, 10, 10] },
+        { url: 'ok.tif', bbox: [-10, 0, 10, 10] },
+      ]);
+      const good = { id: 'ok' } as unknown as GeoTIFF;
+      const readPixelValues = vi.fn(async () => reading);
+      const openMosaicAsset = vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(good);
+      const insp = new PixelInspector(map, () => target, {
+        readPixelValues,
+        openMosaicAsset,
+        createPopup: makePopup,
+      });
+
+      insp.enable();
+      emit('click', click(5, 5));
+      await flush();
+
+      expect(openMosaicAsset).toHaveBeenCalledTimes(2);
+      expect(readPixelValues).toHaveBeenCalledTimes(1);
+      expect(readPixelValues.mock.calls[0][0]).toBe(good);
+    });
+
+    it('falls through to the next asset when the click misses its pixel grid', async () => {
+      // A bbox bounds an asset's extent, but the point can still fall outside
+      // its grid — readPixelValues reports that as null.
+      const { map, emit } = makeFakeMap();
+      const target = makeManifestTarget([
+        { url: 'a.tif', bbox: [-10, 0, 10, 10] },
+        { url: 'b.tif', bbox: [-10, 0, 10, 10] },
+      ]);
+      const first = { id: 'a' } as unknown as GeoTIFF;
+      const second = { id: 'b' } as unknown as GeoTIFF;
+      const readPixelValues = vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(reading);
+      const openMosaicAsset = vi
+        .fn()
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+      const insp = new PixelInspector(map, () => target, {
+        readPixelValues,
+        openMosaicAsset,
+        createPopup: makePopup,
+      });
+
+      insp.enable();
+      emit('click', click(5, 5));
+      await flush();
+
+      expect(readPixelValues).toHaveBeenCalledTimes(2);
+      expect(readPixelValues.mock.calls[0][0]).toBe(first);
+      expect(readPixelValues.mock.calls[1][0]).toBe(second);
+    });
+
+    it('opens nothing when the click falls outside every asset', async () => {
+      const { map, emit } = makeFakeMap();
+      const target = makeManifestTarget();
+      const openMosaicAsset = vi.fn();
+      const readPixelValues = vi.fn();
+      const popup = makePopup();
+      const insp = new PixelInspector(map, () => target, {
+        readPixelValues,
+        openMosaicAsset,
+        createPopup: () => popup,
+      });
+
+      insp.enable();
+      emit('click', click(80, 5));
+      await flush();
+
+      expect(openMosaicAsset).not.toHaveBeenCalled();
+      expect(readPixelValues).not.toHaveBeenCalled();
+      expect(popup.addTo).toHaveBeenCalledWith(map);
+    });
+
+    it('still reports a manifest layer that has not parsed yet as loading', async () => {
+      const { map, emit } = makeFakeMap();
+      // isMosaicJson but no assets yet: the manifest fetch is still in flight.
+      const target = makeTarget({
+        geotiff: null,
+        isMosaicJson: true,
+        mosaicAssets: null,
+        loading: true,
+      });
+      const openMosaicAsset = vi.fn();
+      const popup = makePopup();
+      const insp = new PixelInspector(map, () => target, {
+        readPixelValues: vi.fn(),
+        openMosaicAsset,
+        createPopup: () => popup,
+      });
+
+      insp.enable();
+      emit('click', click(5, 5));
+      await flush();
+
+      expect(openMosaicAsset).not.toHaveBeenCalled();
+      expect(popup.setDOMContent).toHaveBeenCalled();
+      const node = popup.setDOMContent.mock.calls[0][0] as HTMLElement;
+      expect(node.textContent).toContain('still loading');
+    });
+  });
+
   it('destroy detaches the listener and removes the popup', () => {
     const { map } = makeFakeMap();
     const popup = makePopup();

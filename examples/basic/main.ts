@@ -28,7 +28,7 @@ const SAMPLE_COGS = [
   },
   {
     label: 'NAIP aerial imagery (STAC mosaic)',
-    url: 'https://data.source.coop/giswqs/opengeos/naip_water_train_stac.json',
+    url: 'https://data.source.coop/giswqs/opengeos/naip_nd_2023_stac.json',
     attribution: 'USDA National Agriculture Imagery Program (NAIP)',
   },
 ];
