@@ -583,12 +583,15 @@ export class LayerManager {
         await this._openMosaic(layer, url);
         if (this._destroyed || !this.getLayer(layer.id)) return layer.id;
         layer.loading = false;
-        // A STAC mosaic has no TiTiler equivalent, a local file's blob URL is
-        // unreachable by the server, and the WASM engine cannot mosaic at all;
-        // these fall back to the default GPU engine. deck.gl always renders a
-        // mosaic; TiTiler renders only a remote MosaicJSON.
+        // A STAC mosaic has no TiTiler equivalent and a local file's blob URL is
+        // unreachable by the server, so those fall back to the default GPU
+        // engine. deck.gl always renders a mosaic; cog-tiler-wasm composites the
+        // covering assets per tile (its assets are read by URL, so a manifest
+        // dropped as a local file works too); TiTiler renders only a remote
+        // MosaicJSON.
         const canRender =
           this._engine === 'maplibre-gl-raster' ||
+          this._engine === 'cog-tiler-wasm' ||
           (this._engine === 'titiler' &&
             layer.mosaicKind === 'mosaicjson' &&
             !isFile);
@@ -1168,7 +1171,12 @@ export class LayerManager {
    */
   private _cogRenderableLayers(): CogEngineLayer[] {
     return this._layers
-      .filter((l) => l.geotiff && l.state.visible && !this._crsFailed.has(l.id))
+      .filter(
+        (l) =>
+          (l.geotiff || l.mosaicAssets) &&
+          l.state.visible &&
+          !this._crsFailed.has(l.id),
+      )
       .flatMap((l) => {
         const shared = {
           state: l.state,
@@ -1176,6 +1184,20 @@ export class LayerManager {
           beforeId: l.beforeId,
           zoomTo: l.zoomTo,
         };
+        // A mosaic manifest is one engine layer carrying its asset list: the
+        // engine composites the covering assets per tile rather than opening a
+        // COG here (a manifest can list thousands).
+        if (l.mosaicAssets) {
+          return [
+            {
+              id: l.id,
+              source: l.url,
+              assets: l.mosaicAssets,
+              minzoom: l.mosaicMinzoom,
+              ...shared,
+            },
+          ];
+        }
         if (!l.members) {
           return [{ id: l.id, source: l.file ?? l.url, ...shared }];
         }
