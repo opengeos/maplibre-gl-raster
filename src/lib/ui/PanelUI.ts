@@ -1,4 +1,5 @@
 import type { RasterSampleDataset } from '../core/types';
+import { DEFAULT_TITILER_ENDPOINT } from '../raster/titiler';
 import type { LayerManager } from '../state/LayerManager';
 import { AddDataSection } from './AddDataSection';
 import { el } from './dom';
@@ -44,6 +45,13 @@ export class PanelUI {
         manager.setEngine(next);
         // Reflect the change in case the manager normalized it.
         engine.setValue(manager.engine);
+      },
+      titilerEndpoint: manager.titilerEndpoint,
+      titilerEndpointPlaceholder: DEFAULT_TITILER_ENDPOINT,
+      onTitilerEndpointChange: (endpoint) => {
+        manager.setTitilerEndpoint(endpoint);
+        // Reflect the normalized value (empty input → default endpoint).
+        engine.setEndpoint(manager.titilerEndpoint);
       },
     });
     this._engine = engine;
@@ -109,8 +117,10 @@ export class PanelUI {
       this._settings.render();
     };
     const onChange = () => {
-      // A programmatic setEngine() emits rasterchange; keep the selector synced.
+      // A programmatic setEngine()/setTitilerEndpoint() emits rasterchange; keep
+      // the selector and endpoint input synced.
       this._engine.setValue(this._manager.engine);
+      this._engine.setEndpoint(this._manager.titilerEndpoint);
       this._renderList();
       this._settings.notifyChange();
     };

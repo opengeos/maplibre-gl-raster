@@ -48,6 +48,16 @@ import {
   type CogTilerModule,
 } from './CogTilerEngine';
 import {
+  defaultFetchTileJson,
+  TiTilerEngine,
+  type TiTilerEngineLayer,
+} from './TiTilerEngine';
+import {
+  DEFAULT_TITILER_ENDPOINT,
+  isMosaicJsonUrl,
+  type TiTilerTileJson,
+} from '../raster/titiler';
+import {
   createLayerState,
   deriveLayerName,
   type GeographicBounds,
@@ -304,6 +314,9 @@ export interface LayerManagerDeps {
    * never enter the default bundle; overridable in tests.
    */
   loadCogTiler: () => Promise<CogTilerModule>;
+  /** Fetches a TiTiler `tilejson.json` for the `titiler` engine (default:
+   * `fetch`); overridable in tests so no network is touched. */
+  fetchTileJson: (url: string) => Promise<TiTilerTileJson>;
 }
 
 const DEFAULT_DEPS: LayerManagerDeps = {
@@ -316,6 +329,7 @@ const DEFAULT_DEPS: LayerManagerDeps = {
   // Vite/consumers resolve and code-split it; the lib build externalizes it
   // (see vite.config.ts) so it never enters the default bundle.
   loadCogTiler: () => import('cog-tiler-wasm'),
+  fetchTileJson: defaultFetchTileJson,
   createOverlay: (map, options) => {
     const overlay = new MapboxOverlay({
       interleaved: options.interleaved,
@@ -350,6 +364,10 @@ export class LayerManager {
   private _engine: RenderEngine = DEFAULT_ENGINE;
   /** The cog-tiler-wasm backend, created lazily when that engine is selected. */
   private _cogEngine: CogTilerEngine | null = null;
+  /** The TiTiler backend, created lazily when that engine is selected. */
+  private _titilerEngine: TiTilerEngine | null = null;
+  /** TiTiler instance the `titiler` engine renders through. */
+  private _titilerEndpoint: string;
   private _overlay: OverlayLike | null = null;
   private _device: Device | null = null;
   private _colormapTexture: Texture | null = null;
@@ -378,12 +396,18 @@ export class LayerManager {
    */
   constructor(
     map: MapLibreMap,
-    options?: { interleaved?: boolean; engine?: RenderEngine },
+    options?: {
+      interleaved?: boolean;
+      engine?: RenderEngine;
+      titilerEndpoint?: string;
+    },
     deps?: Partial<LayerManagerDeps>,
   ) {
     this._map = map;
     this._interleaved = options?.interleaved ?? true;
     this._engine = options?.engine ?? DEFAULT_ENGINE;
+    this._titilerEndpoint =
+      options?.titilerEndpoint?.trim() || DEFAULT_TITILER_ENDPOINT;
     this._deps = { ...DEFAULT_DEPS, ...deps };
   }
 
@@ -397,6 +421,31 @@ export class LayerManager {
     return this._engine;
   }
 
+  /** The TiTiler instance the `titiler` engine renders through. */
+  get titilerEndpoint(): string {
+    return this._titilerEndpoint;
+  }
+
+  /**
+   * Points the `titiler` engine at a different TiTiler instance. Empty input
+   * restores the default endpoint. When the `titiler` engine is active, tiles
+   * refetch from the new server immediately. A no-op when unchanged.
+   *
+   * @param endpoint - TiTiler base URL, or empty for the default
+   */
+  setTitilerEndpoint(endpoint: string): void {
+    const next = endpoint.trim() || DEFAULT_TITILER_ENDPOINT;
+    if (next === this._titilerEndpoint) return;
+    this._titilerEndpoint = next;
+    this._titilerEngine?.setEndpoint(next);
+    if (this._engine === 'titiler') {
+      // Re-render every layer from the new server.
+      this._titilerEngine?.clear();
+      this._rebuild();
+    }
+    this._emit({ type: 'rasterchange' });
+  }
+
   /**
    * Switches the rendering backend for every layer. Tears down the previous
    * backend's map artifacts and re-renders with the new one. A no-op when the
@@ -407,13 +456,11 @@ export class LayerManager {
   setEngine(engine: RenderEngine): void {
     if (engine === this._engine) return;
     this._engine = engine;
-    if (engine === 'maplibre-gl-raster') {
-      // Hand rendering back to deck.gl: drop the cog-tiler map layers first.
-      this._cogEngine?.clear();
-    } else {
-      // Hand rendering to cog-tiler: blank the deck.gl overlay first.
-      this._overlay?.setProps({ layers: [] });
-    }
+    // Tear down the map artifacts of every engine that is no longer active, so
+    // two engines never draw the same layer at once.
+    if (engine !== 'maplibre-gl-raster') this._overlay?.setProps({ layers: [] });
+    if (engine !== 'cog-tiler-wasm') this._cogEngine?.clear();
+    if (engine !== 'titiler') this._titilerEngine?.clear();
     this._rebuild();
     this._emit({ type: 'rasterchange' });
   }
@@ -449,6 +496,10 @@ export class LayerManager {
     }
     const isFile = typeof source !== 'string';
     const url = isFile ? URL.createObjectURL(source) : source;
+    // A MosaicJSON manifest (URL only) is rendered server-side by TiTiler; it
+    // has no single GeoTIFF to read locally, so it takes a distinct load path
+    // below and forces the `titiler` engine.
+    const mosaicJson = !isFile && isMosaicJsonUrl(source);
     const layer: RasterLayer = {
       id,
       name: options?.name ?? deriveLayerName(isFile ? source.name : source),
@@ -463,6 +514,7 @@ export class LayerManager {
         options?.state?.bands !== undefined,
       geotiff: null,
       members: null,
+      isMosaicJson: mosaicJson,
       autoStats: null,
       bandCount: null,
       bandNames: null,
@@ -483,6 +535,29 @@ export class LayerManager {
     this._emit({ type: 'rasteradd', layerId: layer.id });
 
     try {
+      // A MosaicJSON has no local GeoTIFF: TiTiler renders it and reports its
+      // bounds. Skip the header load entirely, force the only engine that can
+      // draw it, and default to an RGB view (the manifest does not expose a
+      // band count; most mosaics are RGB imagery).
+      if (mosaicJson) {
+        layer.loading = false;
+        // The manifest exposes no band count; assume an RGB mosaic (the common
+        // case) so the band pickers offer three channels. A single-band mosaic
+        // still works — the user switches to single mode and band 1.
+        layer.bandCount = 3;
+        if (!layer.userPickedMode) {
+          layer.state.mode = 'rgb';
+          layer.state.bands = [1, 2, 3];
+        }
+        if (this._engine !== 'titiler') {
+          // setEngine rebuilds (rendering the new layer) and emits rasterchange.
+          this.setEngine('titiler');
+        } else {
+          this._rebuild();
+          this._emit({ type: 'rasterchange', layerId: layer.id });
+        }
+        return layer.id;
+      }
       // A .vrt is a manifest, not raster data: expand it into its member COGs.
       // Everything downstream reads the first member, which the expansion
       // requires every other member to agree with (see _openVrt).
@@ -772,6 +847,10 @@ export class LayerManager {
       this._cogEngine.destroy();
       this._cogEngine = null;
     }
+    if (this._titilerEngine) {
+      this._titilerEngine.destroy();
+      this._titilerEngine = null;
+    }
     this._handlers.clear();
   }
 
@@ -797,7 +876,8 @@ export class LayerManager {
   /** Ensures the artifacts for the active engine exist. */
   private _ensureEngine(): void {
     if (this._engine === 'maplibre-gl-raster') this._ensureOverlay();
-    else this._ensureCogEngine();
+    else if (this._engine === 'cog-tiler-wasm') this._ensureCogEngine();
+    else this._ensureTiTilerEngine();
   }
 
   private _ensureOverlay(): void {
@@ -825,12 +905,54 @@ export class LayerManager {
     return this._cogEngine;
   }
 
+  private _ensureTiTilerEngine(): TiTilerEngine {
+    if (!this._titilerEngine) {
+      this._titilerEngine = new TiTilerEngine(this._map, {
+        endpoint: this._titilerEndpoint,
+        fetchTileJson: this._deps.fetchTileJson,
+        onBounds: (id, bounds, zoomTo, minzoom) =>
+          this._onCogBounds(id, bounds, zoomTo, minzoom),
+        onError: (id, error) => this._onCogError(id, error),
+      });
+    }
+    return this._titilerEngine;
+  }
+
+  /**
+   * Projects the renderable layers into the TiTiler engine's input shape.
+   *
+   * TiTiler reads its sources over HTTP, so only remote layers qualify: a
+   * MosaicJSON manifest, or a plain remote COG (its URL). Local-file layers
+   * (blob URLs the server cannot reach) and VRT mosaics (not a format the
+   * `/cog` router reads) are skipped — they render on the other engines.
+   */
+  private _titilerRenderableLayers(): TiTilerEngineLayer[] {
+    return this._layers
+      .filter(
+        (l) =>
+          l.state.visible &&
+          !this._crsFailed.has(l.id) &&
+          (l.isMosaicJson ||
+            (!!l.geotiff && l.source.kind === 'url' && !l.members)),
+      )
+      .map((l) => ({
+        id: l.id,
+        url: l.url,
+        kind: l.isMosaicJson ? ('mosaicjson' as const) : ('cog' as const),
+        state: l.state,
+        autoStats: l.autoStats,
+        beforeId: l.beforeId,
+        zoomTo: l.zoomTo,
+      }));
+  }
+
   /** Records a cog-tiler source's bounds (fitting the map once when requested),
    * mirroring the deck path's onGeoTIFFLoad behavior. */
   private _onCogBounds(
     id: string,
     bounds: GeographicBounds,
     zoomTo: boolean,
+    minzoom?: number,
   ): void {
     // Prefer an exact match: a caller-supplied layer id is free to contain the
     // member separator, and it must not be mistaken for a member of some other
@@ -854,7 +976,7 @@ export class LayerManager {
     layer.bounds = clamped;
     if (zoomTo && layer.zoomTo) {
       layer.zoomTo = false;
-      this._fitBounds(layer.bounds);
+      this._fitBounds(layer.bounds, minzoom);
     }
     if (boundsArrived) this._emit({ type: 'rasterchange', layerId: layer.id });
   }
@@ -968,14 +1090,33 @@ export class LayerManager {
     })();
   }
 
-  private _fitBounds(bounds: GeographicBounds): void {
-    this._map.fitBounds(
-      [
-        [bounds.west, bounds.south],
-        [bounds.east, bounds.north],
-      ],
-      { padding: 40, duration: 800 },
-    );
+  private _fitBounds(bounds: GeographicBounds, minZoom?: number): void {
+    const bbox: [[number, number], [number, number]] = [
+      [bounds.west, bounds.south],
+      [bounds.east, bounds.north],
+    ];
+    // For a small, high-resolution source (a TiTiler mosaic can start at zoom
+    // 12+), fitting the whole extent can land the map below the zoom where any
+    // tiles exist, leaving it blank. When a native minimum zoom is known and
+    // the fit would fall short of it, ease to the bounds center at that zoom
+    // instead so the initial view lands inside the tiled range. Falls back to
+    // plain fitBounds when the map lacks cameraForBounds (e.g. test fakes).
+    const map = this._map as unknown as {
+      cameraForBounds?: (b: unknown, o: unknown) => { center: unknown; zoom: number } | undefined;
+      easeTo?: (o: unknown) => void;
+    };
+    if (minZoom !== undefined && map.cameraForBounds && map.easeTo) {
+      const camera = map.cameraForBounds(bbox, { padding: 40 });
+      if (camera && Number.isFinite(camera.zoom)) {
+        map.easeTo({
+          center: camera.center,
+          zoom: Math.max(camera.zoom, minZoom),
+          duration: 800,
+        });
+        return;
+      }
+    }
+    this._map.fitBounds(bbox, { padding: 40, duration: 800 });
   }
 
   /** Reconciles per-layer attributions with the map's attribution control.
@@ -1012,7 +1153,7 @@ export class LayerManager {
     for (const l of this._layers) {
       if (
         l.attribution &&
-        l.geotiff &&
+        (l.geotiff || l.isMosaicJson) &&
         l.state.visible &&
         !l.error &&
         !this._crsFailed.has(l.id)
@@ -1062,6 +1203,13 @@ export class LayerManager {
       // cog-tiler engine drive the native MapLibre raster layers.
       this._overlay?.setProps({ layers: [] });
       this._ensureCogEngine().sync(this._cogRenderableLayers());
+      return;
+    }
+    if (this._engine === 'titiler') {
+      // TiTiler renders server-side into native MapLibre raster layers; keep
+      // the deck.gl overlay blank (if any) and let the engine drive them.
+      this._overlay?.setProps({ layers: [] });
+      this._ensureTiTilerEngine().sync(this._titilerRenderableLayers());
       return;
     }
     if (!this._overlay) return;

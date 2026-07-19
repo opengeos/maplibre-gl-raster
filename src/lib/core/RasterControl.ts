@@ -1,5 +1,6 @@
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl';
 import { createResilientEpsgResolver } from '../raster/epsg-resolver';
+import { DEFAULT_TITILER_ENDPOINT } from '../raster/titiler';
 import { autoRangeFor, statsForBand } from '../raster/render-pipeline';
 import { LayerManager } from '../state/LayerManager';
 import { PixelInspector } from '../state/PixelInspector';
@@ -33,6 +34,7 @@ const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
   sampleDataLabel: 'Load sample data...',
   closeOnOutsideClick: true,
   engine: 'maplibre-gl-raster',
+  titilerEndpoint: DEFAULT_TITILER_ENDPOINT,
   epsgResolver: createResilientEpsgResolver(),
 };
 
@@ -126,6 +128,7 @@ export class RasterControl implements IControl {
       {
         interleaved: this._options.interleaved,
         engine: this._options.engine,
+        titilerEndpoint: this._options.titilerEndpoint,
       },
       { epsgResolver: this._options.epsgResolver },
     );
@@ -447,6 +450,29 @@ export class RasterControl implements IControl {
   setEngine(engine: RenderEngine): void {
     this._options.engine = engine;
     this._layerManager?.setEngine(engine);
+  }
+
+  /**
+   * Gets the TiTiler endpoint used by the `'titiler'` engine.
+   *
+   * @returns The current endpoint (or the configured default before the control
+   *   is added to a map)
+   */
+  getTitilerEndpoint(): string {
+    return this._layerManager?.titilerEndpoint ?? this._options.titilerEndpoint;
+  }
+
+  /**
+   * Points the `'titiler'` engine at a different TiTiler instance. Empty input
+   * restores the default endpoint; the panel's endpoint input reflects the
+   * change. When the `titiler` engine is active, tiles refetch from the new
+   * server immediately.
+   *
+   * @param endpoint - TiTiler base URL, or empty for the default
+   */
+  setTitilerEndpoint(endpoint: string): void {
+    this._options.titilerEndpoint = endpoint.trim() || DEFAULT_TITILER_ENDPOINT;
+    this._layerManager?.setTitilerEndpoint(endpoint);
   }
 
   /**

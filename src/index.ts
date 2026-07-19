@@ -30,6 +30,12 @@ export {
 } from './lib/raster/vrt';
 export type { VrtMember, VrtMosaic } from './lib/raster/vrt';
 export {
+  DEFAULT_TITILER_ENDPOINT,
+  isMosaicJsonUrl,
+  TITILER_TMS,
+} from './lib/raster/titiler';
+export type { TiTilerKind, TiTilerTileJson } from './lib/raster/titiler';
+export {
   isKnownColormap,
   loadColormapSprite,
   sampleColormapStops,
