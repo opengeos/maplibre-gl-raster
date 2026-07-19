@@ -215,7 +215,7 @@ shapes are accepted:
 // Renders on the deck.gl engine by default:
 await control.addRaster("https://example.com/mosaic.json");
 await control.addRaster(
-  "https://data.source.coop/giswqs/opengeos/naip_water_train_stac.json",
+  "https://data.source.coop/giswqs/opengeos/naip_nd_2023_stac.json",
 );
 ```
 
@@ -224,10 +224,33 @@ the `make_stac.py` helper in this repo:
 
 ```bash
 # A directory of local COGs, hosted under a public base URL:
-python make_stac.py ./tiles -o mosaic.json --href-base https://data.example.com/tiles
+python python/make_stac.py ./tiles -o mosaic.json --href-base https://data.example.com/tiles
 # ...or explicit remote COG URLs (add --full for complete STAC Items):
-python make_stac.py https://data.example.com/a.tif https://data.example.com/b.tif -o mosaic.json
+python python/make_stac.py https://data.example.com/a.tif https://data.example.com/b.tif -o mosaic.json
 ```
+
+To build the same `FeatureCollection` from imagery you *don't* host — by
+searching a STAC API such as the
+[Planetary Computer](https://planetarycomputer.microsoft.com/) — use
+`search_stac.py` (standard library only):
+
+```bash
+# NAIP over a bbox, one year:
+python python/search_stac.py -c naip -b -99.3759,46.8959,-98.8825,47.1299 -d 2023 -o naip.json
+# Least-cloudy Sentinel-2 scenes, with SAS-signed hrefs for browser access:
+python python/search_stac.py -c sentinel-2-l2a -b 5.6,45.8,6.2,46.1 -d 2024-06-01/2024-09-01 \
+    --query '{"eo:cloud_cover":{"lt":10}}' --sortby eo:cloud_cover \
+    --max-items 20 --asset visual --sign -o s2.json
+```
+
+Both scripts pretty-print with a 2-space indent by default; pass `--compact` to
+write the document on a single line instead (about a third smaller, and the
+shape the deck.gl-raster example ships).
+
+Point `--api` at any other STAC API (e.g. Earth Search) to search it instead.
+Planetary Computer collections whose blobs are not anonymously readable need
+`--sign`; those tokens expire, so re-run the search rather than reusing an old
+file.
 
 On the default **`maplibre-gl-raster`** engine the mosaic is a deck.gl
 `MosaicLayer`: a spatial index culls to the viewport and renders one on-GPU

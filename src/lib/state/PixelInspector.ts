@@ -2,7 +2,7 @@ import { Popup, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
 import type { GeoTIFF } from '@developmentseed/geotiff';
 import { readPixelValues, type PixelReading } from '../raster/inspect';
 import { el } from '../ui/dom';
-import { imagesAt, type RasterLayer } from './RasterLayer';
+import { assetsAt, imagesAt, type RasterLayer } from './RasterLayer';
 
 /** The slice of maplibre-gl's Popup the inspector drives. Lets tests inject a
  * lightweight fake instead of a real popup. */
@@ -17,10 +17,22 @@ export interface PopupLike {
 export interface PixelInspectorDeps {
   readPixelValues: typeof readPixelValues;
   createPopup: () => PopupLike;
+  /** Opens (or reuses) a mosaic asset's GeoTIFF header, resolving null when it
+   * cannot be read. Supplied by `RasterControl` from `LayerManager`, so a click
+   * reuses the same cache the renderer fills instead of refetching headers. */
+  openMosaicAsset: (url: string) => Promise<GeoTIFF | null>;
 }
+
+/** How many covering assets one click will open before giving up. Assets in a
+ * mosaic barely overlap, so the first candidate almost always answers; the cap
+ * just bounds the work when a click lands where many extents pile up. */
+const MAX_MOSAIC_CANDIDATES = 4;
 
 const DEFAULT_DEPS: PixelInspectorDeps = {
   readPixelValues,
+  // No mosaic assets can be opened unless the owner supplies a real opener;
+  // resolving null degrades to "No data at this location." rather than throwing.
+  openMosaicAsset: async () => null,
   createPopup: () =>
     new Popup({
       closeButton: true,
@@ -48,6 +60,18 @@ function messageFor(target: RasterLayer | null): string {
   if (!target) return 'Select a raster layer to inspect.';
   if (target.error) return 'Layer failed to load.';
   return 'Layer is still loading…';
+}
+
+/**
+ * Whether `layer` has loaded enough to answer a read.
+ *
+ * A plain or VRT layer needs its GeoTIFF open. A mosaic manifest layer never
+ * opens one — its assets are opened lazily per viewport — so it is ready as
+ * soon as the manifest has been parsed into assets.
+ */
+function isReadable(layer: RasterLayer): boolean {
+  if (layer.loading || layer.error) return false;
+  return layer.mosaicAssets ? layer.mosaicAssets.length > 0 : !!layer.geotiff;
 }
 
 /**
@@ -130,15 +154,18 @@ export class PixelInspector {
     this._abort = null;
 
     const target = this._getTarget();
-    if (!target || target.loading || !target.geotiff || target.error) {
+    if (!target || !isReadable(target)) {
       this._show(lngLat, this._messageContent(messageFor(target)));
       return;
     }
 
+    // A mosaic manifest layer holds no open image: narrow to the assets whose
+    // bbox covers the click and open them on demand.
+    const assets = target.mosaicAssets ? assetsAt(target, lngLat) : null;
     // For a mosaic VRT layer this narrows to the member(s) covering the click;
     // an empty list means the point is outside the mosaic, which needs no read.
-    const images = imagesAt(target, lngLat);
-    if (images.length === 0) {
+    const images = assets ? [] : imagesAt(target, lngLat);
+    if ((assets ?? images).length === 0) {
       this._show(lngLat, this._messageContent('No data at this location.'));
       return;
     }
@@ -147,7 +174,10 @@ export class PixelInspector {
     this._abort = controller;
     this._show(lngLat, this._messageContent('Reading…'));
 
-    this._readFirst(images, lngLat, controller.signal, target.bandNames)
+    (assets
+      ? this._readFirstAsset(assets, lngLat, controller.signal, target.bandNames)
+      : this._readFirst(images, lngLat, controller.signal, target.bandNames)
+    )
       .then((reading) => {
         if (controller.signal.aborted) return;
         this._show(
@@ -183,6 +213,38 @@ export class PixelInspector {
     bandNames: Map<number, string> | null,
   ): Promise<PixelReading | null> {
     for (const image of images) {
+      const reading = await this._deps.readPixelValues(image, lngLat, {
+        signal,
+        bandNames,
+      });
+      if (signal.aborted) return null;
+      if (reading) return reading;
+    }
+    return null;
+  }
+
+  /**
+   * Reads `lngLat` from a mosaic layer by opening its covering assets in turn.
+   *
+   * The manifest's bboxes only bound each asset's extent, so as in
+   * {@link _readFirst} the first candidate that actually covers the point wins.
+   * Assets are opened one at a time rather than in parallel: a hit on the first
+   * (the common case, since mosaic assets barely overlap) then costs a single
+   * header fetch. An asset that cannot be opened resolves null and is skipped,
+   * so one unreadable COG does not sink the whole read.
+   *
+   * @returns The first reading found, or null when no candidate covers the point
+   */
+  private async _readFirstAsset(
+    urls: string[],
+    lngLat: [number, number],
+    signal: AbortSignal,
+    bandNames: Map<number, string> | null,
+  ): Promise<PixelReading | null> {
+    for (const url of urls.slice(0, MAX_MOSAIC_CANDIDATES)) {
+      const image = await this._deps.openMosaicAsset(url);
+      if (signal.aborted) return null;
+      if (!image) continue;
       const reading = await this._deps.readPixelValues(image, lngLat, {
         signal,
         bandNames,

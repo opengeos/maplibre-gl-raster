@@ -185,6 +185,45 @@ export function imagesAt(
 }
 
 /**
+ * The mosaic assets whose extent covers `lngLat`, in manifest order.
+ *
+ * A mosaic manifest layer (MosaicJSON or STAC) has no opened image of its own —
+ * the deck.gl {@link import('@developmentseed/deck.gl-geotiff').MosaicLayer}
+ * opens each asset lazily while it is in view — so a reader works from the
+ * manifest's bboxes and opens what it needs. This is the mosaic counterpart to
+ * {@link imagesAt}, returning URLs because the COGs may not be open yet.
+ *
+ * Unlike a VRT's members these are *not* reversed. A VRT has a defined paint
+ * order (later sources overwrite earlier ones), but a mosaic's assets are drawn
+ * in whatever order its spatial index returns them, so no candidate is reliably
+ * "topmost". Manifest order is used instead: it matches MosaicJSON's convention
+ * that the first asset listed for a location is the preferred one. Where assets
+ * genuinely overlap the drawn pixel is ambiguous, and the first covering asset
+ * is as defensible a report as any.
+ *
+ * @param layer - The layer to read from
+ * @param lngLat - The location, [lng, lat] in WGS84
+ * @returns Covering asset URLs in manifest order; empty when the layer is not a
+ *   mosaic manifest, has not parsed yet, or the point falls outside every asset
+ */
+export function assetsAt(
+  layer: RasterLayer,
+  lngLat: [number, number],
+): string[] {
+  if (!layer.mosaicAssets) return [];
+  const [lng, lat] = lngLat;
+  return layer.mosaicAssets
+    .filter(
+      (a) =>
+        lng >= a.bbox[0] &&
+        lng <= a.bbox[2] &&
+        lat >= a.bbox[1] &&
+        lat <= a.bbox[3],
+    )
+    .map((a) => a.url);
+}
+
+/**
  * Derives a display name from a URL or file name: the last path segment
  * without query string.
  *

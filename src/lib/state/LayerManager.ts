@@ -821,8 +821,11 @@ export class LayerManager {
    * there leaves deck.gl calling `renderSubLayers` with null tile content,
    * which the layer destructures unguarded and crashes on. Resolving null makes
    * the tile render nothing, and the eviction lets a later viewport pass retry
-   * (e.g. after a transient CORS/network failure). */
-  private _openMosaicAsset(url: string): Promise<GeoTIFF | null> {
+   * (e.g. after a transient CORS/network failure).
+   *
+   * Public so the pixel inspector can read a mosaic asset through the same
+   * cache the renderer fills, instead of refetching a header per click. */
+  openMosaicAsset(url: string): Promise<GeoTIFF | null> {
     let opened = this._mosaicGeotiffs.get(url);
     if (!opened) {
       opened = this._deps.loadGeoTIFF(url).catch(() => {
@@ -1416,7 +1419,7 @@ export class LayerManager {
    *
    * The mosaic holds one {@link import('../raster/mosaicjson').MosaicAsset} per
    * COG (URL + WGS84 bbox); its spatial index culls to the viewport and, for
-   * each visible asset, opens the COG ({@link _openMosaicAsset}) and renders it
+   * each visible asset, opens the COG ({@link openMosaicAsset}) and renders it
    * with a {@link WebMercatorCOGLayer} carrying the layer's shared pipeline —
    * the same per-COG GPU path a plain raster uses, so every asset is
    * reprojected and stretched identically.
@@ -1452,7 +1455,7 @@ export class LayerManager {
       // COGLayers) to refetch, matching cogLayerId's behavior for plain rasters.
       id: `${layer.id}${bandTag}`,
       sources,
-      getSource: (source: Source) => this._openMosaicAsset(source.url),
+      getSource: (source: Source) => this.openMosaicAsset(source.url),
       renderSource: (
         source: Source,
         opts: { data?: GeoTIFF | null },
