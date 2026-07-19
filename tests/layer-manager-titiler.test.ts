@@ -52,8 +52,21 @@ function makeHarness(opts?: { engine?: 'maplibre-gl-raster' | 'titiler' }) {
   );
 
   const loadGeoTIFF = vi.fn(async () => makeFakeTiff(3));
+  const loadMosaic = vi.fn(async () => ({
+    kind: 'mosaicjson' as const,
+    assets: [
+      {
+        url: 'https://example.com/a.tif',
+        bbox: [-10, -5, 10, 5] as [number, number, number, number],
+      },
+    ],
+    bounds: { west: -10, south: -5, east: 10, north: 5 },
+    minzoom: 12,
+    maxzoom: 19,
+  }));
   const deps: Partial<LayerManagerDeps> = {
     loadGeoTIFF,
+    loadMosaic,
     computeAutoStats: vi.fn(async () => {
       throw new Error('unused');
     }),
@@ -95,16 +108,10 @@ describe('LayerManager TiTiler engine', () => {
     expect(manager.engine).toBe('titiler');
   });
 
-  it('auto-selects the titiler engine when a MosaicJSON is added', async () => {
-    const { manager, map, fetchTileJson, loadGeoTIFF } = makeHarness({
-      engine: 'maplibre-gl-raster',
-    });
-    expect(manager.engine).toBe('maplibre-gl-raster');
-
+  it('keeps a titiler-active mosaic on the TiTiler engine (server-side render)', async () => {
+    const { manager, map, fetchTileJson } = makeHarness({ engine: 'titiler' });
     const id = await manager.addRaster('https://example.com/mosaic.json');
     expect(manager.engine).toBe('titiler');
-    // A MosaicJSON has no single GeoTIFF, so no header is loaded.
-    expect(loadGeoTIFF).not.toHaveBeenCalled();
 
     await vi.waitFor(() => expect(map.addLayer).toHaveBeenCalled());
     expect(fetchTileJson.mock.calls[0][0]).toContain(
@@ -112,12 +119,12 @@ describe('LayerManager TiTiler engine', () => {
     );
     const layer = manager.getLayer(id)!;
     expect(layer.isMosaicJson).toBe(true);
+    // No single local GeoTIFF is attached for a mosaic.
     expect(layer.geotiff).toBeNull();
     expect(layer.loading).toBe(false);
-    // Defaults to an RGB view with three assumed bands.
-    expect(layer.state.mode).toBe('rgb');
-    expect(layer.state.bands).toEqual([1, 2, 3]);
-    expect(layer.bandCount).toBe(3);
+    // The manifest is still parsed into assets (so the user can switch to the
+    // deck.gl engine without re-adding).
+    expect(layer.mosaicAssets?.length).toBeGreaterThan(0);
   });
 
   it('refetches from a new TiTiler endpoint via setTitilerEndpoint', async () => {

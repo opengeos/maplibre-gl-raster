@@ -11,7 +11,8 @@ A MapLibre GL JS plugin for visualizing local and remote raster datasets (GeoTIF
 
 - **Local and remote rasters** - Load Cloud Optimized GeoTIFFs from any CORS-enabled URL, or drag-and-drop local GeoTIFF files
 - **Mosaic VRTs** - Load a `.vrt` that mosaics COGs; its sources are rendered as one layer with a single shared stretch ([details and limits](#mosaic-vrt-support))
-- **Three rendering backends** - Switch at runtime between the deck.gl GPU pipeline (default), a serverless WASM tiler, and a remote [TiTiler](https://developmentseed.org/titiler/) server; TiTiler additionally renders [MosaicJSON](https://developmentseed.org/titiler/examples/notebooks/Working_with_MosaicJSON) ([details](#rendering-engines))
+- **Three rendering backends** - Switch at runtime between the deck.gl GPU pipeline (default), a serverless WASM tiler, and a remote [TiTiler](https://developmentseed.org/titiler/) server ([details](#rendering-engines))
+- **Mosaics** - Render a [MosaicJSON](https://github.com/developmentseed/mosaicjson-spec) or STAC `FeatureCollection` of COGs as one layer: client-side on the GPU (deck.gl) by default, or server-side via TiTiler ([details](#rendering-engines))
 - **Multiple layers** - Layer list with visibility toggles, reordering, zoom-to, and per-layer settings
 - **GPU rendering pipeline** - Band compositing, per-band rescale, 90+ colormaps, nodata filtering, linear/sqrt/log stretch, and gamma correction as deck.gl shader modules; parameter changes re-render without re-fetching tiles
 - **Auto statistics** - Per-band min/max and histograms sampled from COG overviews (or GDAL metadata), with draggable histogram handles for the rescale range
@@ -124,7 +125,7 @@ The main control class implementing MapLibre's `IControl` interface.
 
 #### Raster Methods
 
-- `addRaster(source, options?)` - Add a raster from a COG, [mosaic `.vrt`](#mosaic-vrt-support), or [MosaicJSON](#rendering-engines) `.json` URL (`string`), or a local GeoTIFF / `.vrt` `File` (a local `.vrt` must name its sources as absolute URLs); resolves with the layer id. A MosaicJSON URL renders through the [`titiler`](#rendering-engines) engine (selected automatically)
+- `addRaster(source, options?)` - Add a raster from a COG, [mosaic `.vrt`](#mosaic-vrt-support), or [mosaic `.json`](#rendering-engines) (MosaicJSON or STAC `FeatureCollection`) URL (`string`), or a local GeoTIFF / `.vrt` `File` (a local `.vrt` must name its sources as absolute URLs); resolves with the layer id. A mosaic `.json` renders on the deck.gl engine by default (a MosaicJSON can also render on [`titiler`](#rendering-engines))
 - `removeRaster(id)` - Remove a raster layer
 - `getRaster(id)` / `getRasters()` - Get layer snapshots (`RasterLayerInfo`); for a mosaic VRT, `memberUrls` lists the COGs it expanded to
 - `setRasterState(id, patch)` - Update visualization state (mode, bands, rescale, colormap, reversed, nodata, opacity, gamma, stretch, visible)
@@ -157,7 +158,8 @@ layer:
 
 - **`maplibre-gl-raster`** (default) - the GPU pipeline described above: a
   deck.gl `COGLayer` on a shared `MapboxOverlay`. Parameter changes re-render
-  without re-fetching tiles.
+  without re-fetching tiles. It also renders a **mosaic** client-side (see
+  [Mosaics](#mosaics) below).
 - **`cog-tiler-wasm`** - a serverless CPU/WASM XYZ tiler
   ([cog-tiler-wasm](https://github.com/opengeos/cog-tiler-wasm)) wired to a
   MapLibre custom protocol. Tiles are rendered on the CPU and served as native
@@ -166,16 +168,15 @@ layer:
 - **`titiler`** - a server-side dynamic tiler
   ([TiTiler](https://developmentseed.org/titiler/)). Tiles are rendered by a
   remote TiTiler instance and drawn as native MapLibre raster layers, so
-  nothing is decoded in the browser. It is the **only engine that can render a
-  [MosaicJSON](https://developmentseed.org/titiler/examples/notebooks/Working_with_MosaicJSON)**
-  (a `.json` manifest of many COGs) - just paste the manifest URL and it loads
-  through TiTiler's `/mosaicjson` router; adding one selects this engine
-  automatically. Bands, rescale, colormap, and a numeric nodata map onto
-  TiTiler's tile parameters (index mode uses a server-side band-math
-  `expression`, so the real normalized-difference index is rendered). The
-  `stretch` and `gamma` controls have no standard TiTiler parameter and are
-  ignored. Only remote sources work (TiTiler reads over HTTP), so local files
-  and `.vrt` mosaics render on the other engines.
+  nothing is decoded in the browser. It renders a
+  [MosaicJSON](https://developmentseed.org/titiler/examples/notebooks/Working_with_MosaicJSON)
+  server-side through TiTiler's `/mosaicjson` router, so it reaches assets a
+  browser cannot (e.g. non-CORS or `s3://` buckets). Bands, rescale, colormap,
+  and a numeric nodata map onto TiTiler's tile parameters (index mode uses a
+  server-side band-math `expression`, so the real normalized-difference index
+  is rendered). The `stretch` and `gamma` controls have no standard TiTiler
+  parameter and are ignored. Only remote sources work (TiTiler reads over
+  HTTP), so local files and `.vrt` mosaics render on the other engines.
 
   The default instance is `https://titiler.d2s.org`; point it at your own
   deployment with the `titilerEndpoint` option, the `setTitilerEndpoint()` API,
@@ -187,20 +188,53 @@ layer:
     engine: "titiler",
     titilerEndpoint: "https://titiler.example.com",
   });
-  // Render a COG, or a MosaicJSON (auto-selects the titiler engine):
-  await control.addRaster("https://example.com/mosaic.json");
+  await control.addRaster("https://example.com/cog.tif");
   // Switch the server at runtime (the panel input stays in sync):
   control.setTitilerEndpoint("https://titiler.xyz");
   ```
 
-  > The TiTiler server must be able to read the source. A MosaicJSON whose
-  > assets are `s3://…` paths only renders on a TiTiler configured for that
-  > bucket (e.g. `AWS_NO_SIGN_REQUEST=YES` for public data); the public
-  > `titiler.xyz` handles many such buckets. Because TiTiler is a *dynamic*
-  > tiler, the plugin does not cap the MapLibre source at the mosaic's
-  > advertised `minzoom` (that would leave a small, high-resolution source
-  > blank until you zoomed in) - instead the initial fit is floored to that
-  > zoom so the view lands where tiles exist.
+  > Because TiTiler is a *dynamic* tiler, the plugin does not cap the MapLibre
+  > source at a MosaicJSON's advertised `minzoom` (that would leave a small,
+  > high-resolution source blank until you zoomed in) - instead the initial fit
+  > is floored to that zoom so the view lands where tiles exist.
+
+### Mosaics
+
+A **mosaic** is a `.json` manifest of many COGs rendered as one layer. Two
+shapes are accepted:
+
+- **[MosaicJSON](https://github.com/developmentseed/mosaicjson-spec)** - `tiles`
+  maps web-mercator quadkeys to the covering COGs; each asset's extent is
+  derived from those quadkeys.
+- **STAC `FeatureCollection`** - each feature carries its own `bbox` and an
+  `assets` map (the shape the
+  [deck.gl-raster NAIP example](https://developmentseed.org/deck.gl-raster/examples/naip-mosaic/)
+  renders); the COG URL is read from the `visual`/`image` asset.
+
+```typescript
+// Renders on the deck.gl engine by default:
+await control.addRaster("https://example.com/mosaic.json");
+await control.addRaster("https://example.com/stac-items.json");
+```
+
+On the default **`maplibre-gl-raster`** engine the mosaic is a deck.gl
+`MosaicLayer`: a spatial index culls to the viewport and renders one on-GPU
+`COGLayer` per visible asset (each read directly over HTTP and reprojected by
+its own header), all sharing one visualization state. A **MosaicJSON** can also
+render on the **`titiler`** engine (server-side); a **STAC** mosaic renders on
+deck.gl only. Adding a mosaic keeps the active engine when it can draw it, and
+otherwise falls back to the deck.gl engine.
+
+A large mosaic (more than ~48 assets) opens on a capped, centred view and hides
+below a `minZoom` derived from the asset size, so a low/world view never spins
+up a `COGLayer` for every asset at once — zoom in to explore, and pan to stream
+in neighbours. A small mosaic always draws its full extent.
+
+> Client-side rendering reads each COG directly, so the assets must be
+> **CORS-enabled** and `https` (an `s3://` asset is rewritten to its
+> virtual-hosted `https` form, but the bucket must still allow browser access).
+> For assets a browser cannot reach, use the `titiler` engine instead. The band
+> count, colormap and rescale window are taken from the first asset's header.
 
 `cog-tiler-wasm` is an **optional peer dependency**, loaded lazily the first
 time the engine is selected, so it never enters the default bundle. To use it,

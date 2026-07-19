@@ -36,6 +36,20 @@ export {
 } from './lib/raster/titiler';
 export type { TiTilerKind, TiTilerTileJson } from './lib/raster/titiler';
 export {
+  assetUrlToHttps,
+  loadMosaic,
+  MAX_MOSAIC_ASSETS,
+  mosaicInitialView,
+  mosaicMinZoom,
+  MosaicUnsupportedError,
+  parseMosaic,
+} from './lib/raster/mosaic';
+export type {
+  MosaicAsset,
+  MosaicKind,
+  ParsedMosaic,
+} from './lib/raster/mosaic';
+export {
   isKnownColormap,
   loadColormapSprite,
   sampleColormapStops,

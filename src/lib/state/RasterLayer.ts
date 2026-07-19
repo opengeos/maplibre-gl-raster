@@ -6,6 +6,7 @@ import type {
   RasterLayerSource,
   RasterLayerState,
 } from '../core/types';
+import type { MosaicAsset, MosaicKind } from '../raster/mosaic';
 import type { AutoStats } from '../raster/stats';
 
 // Moved to core/types so the public RasterLayerInfo can reference it;
@@ -81,9 +82,20 @@ export interface RasterLayer {
   /** Member COGs when this layer came from a mosaic VRT, in VRT source order.
    * Null for a plain single-file raster. */
   members: RasterMember[] | null;
-  /** True when the source is a MosaicJSON manifest (rendered only by the
-   * `titiler` engine, with no local GeoTIFF). See `raster/titiler.ts`. */
+  /** True when the source is a mosaic manifest (MosaicJSON or STAC
+   * FeatureCollection) — no single local GeoTIFF. Rendered client-side by the
+   * deck.gl engine (via {@link mosaicAssets}), or server-side by the `titiler`
+   * engine when {@link mosaicKind} is `'mosaicjson'`. See `raster/mosaic.ts`. */
   isMosaicJson: boolean;
+  /** Which manifest a mosaic layer came from, or null when not a mosaic. Only
+   * `'mosaicjson'` can also render on the `titiler` engine. */
+  mosaicKind: MosaicKind | null;
+  /** For a mosaic layer, the member COG assets (URL + WGS84 bbox) the deck.gl
+   * engine renders. Null for every other source, and until parsed. */
+  mosaicAssets: MosaicAsset[] | null;
+  /** A MosaicJSON's native minimum zoom, used to floor the initial map fit on
+   * the `titiler` engine so the view lands where tiles exist. Null otherwise. */
+  mosaicMinzoom: number | null;
   autoStats: AutoStats | null;
   bandCount: number | null;
   bandNames: globalThis.Map<number, string> | null;
