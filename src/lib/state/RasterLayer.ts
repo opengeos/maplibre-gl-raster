@@ -1,10 +1,12 @@
 import type { GeoTIFF } from '@developmentseed/geotiff';
 import type { Texture } from '@luma.gl/core';
-import type {
-  GeographicBounds,
-  RasterLayerInfo,
-  RasterLayerSource,
-  RasterLayerState,
+import {
+  RASTER_MAX_ZOOM,
+  RASTER_MIN_ZOOM,
+  type GeographicBounds,
+  type RasterLayerInfo,
+  type RasterLayerSource,
+  type RasterLayerState,
 } from '../core/types';
 import type { MosaicAsset, MosaicKind } from '../raster/mosaic';
 import type { AutoStats } from '../raster/stats';
@@ -28,6 +30,8 @@ export const DEFAULT_LAYER_STATE: RasterLayerState = {
   gamma: 1,
   stretch: 'linear',
   visible: true,
+  minZoom: RASTER_MIN_ZOOM,
+  maxZoom: RASTER_MAX_ZOOM,
 };
 
 /**
@@ -40,6 +44,24 @@ export function createLayerState(
   overrides?: Partial<RasterLayerState>,
 ): RasterLayerState {
   return { ...DEFAULT_LAYER_STATE, ...overrides };
+}
+
+/**
+ * Resolves a layer's min/max zoom bounds, filling in the full [0, 24] range for
+ * any bound left unset. Shared by the render engines so the deck.gl overlay and
+ * the native MapLibre raster layers apply an identical zoom range.
+ *
+ * @param state - The layer state (only its zoom bounds are read)
+ * @returns The concrete `{ minZoom, maxZoom }` bounds
+ */
+export function resolveZoomRange(state: Pick<RasterLayerState, 'minZoom' | 'maxZoom'>): {
+  minZoom: number;
+  maxZoom: number;
+} {
+  return {
+    minZoom: state.minZoom ?? RASTER_MIN_ZOOM,
+    maxZoom: state.maxZoom ?? RASTER_MAX_ZOOM,
+  };
 }
 
 /**

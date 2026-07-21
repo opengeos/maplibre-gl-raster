@@ -21,6 +21,7 @@ function makeFakeMap() {
     removeLayer: vi.fn((id: string) => layers.delete(id)),
     removeSource: vi.fn((id: string) => sources.delete(id)),
     setPaintProperty: vi.fn(),
+    setLayerZoomRange: vi.fn(),
     moveLayer: vi.fn(),
     once: vi.fn(),
     off: vi.fn(),

@@ -21,6 +21,7 @@ function makeFakeMap() {
     removeLayer: vi.fn((id: string) => layers.delete(id)),
     removeSource: vi.fn((id: string) => sources.delete(id)),
     setPaintProperty: vi.fn(),
+    setLayerZoomRange: vi.fn(),
     moveLayer: vi.fn(),
     once: vi.fn(),
     off: vi.fn(),
@@ -99,6 +100,33 @@ describe('CogTilerEngine.sync', () => {
       true,
     );
     expect(onError).not.toHaveBeenCalled();
+
+    engine.destroy();
+  });
+
+  it('applies the layer state min/max zoom to the native raster layer', async () => {
+    const { map, raw } = makeFakeMap();
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([
+      layer({
+        state: createLayerState({
+          mode: 'single',
+          bands: [1],
+          colormap: 'viridis',
+          minZoom: 4,
+          maxZoom: 9,
+        }),
+      }),
+    ]);
+    await vi.waitFor(() =>
+      expect(raw.setLayerZoomRange).toHaveBeenCalledWith('a', 4, 9),
+    );
 
     engine.destroy();
   });

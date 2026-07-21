@@ -13,10 +13,12 @@ import { parseColormap, type GeoTIFF } from '@developmentseed/geotiff';
 import type { EpsgResolver } from '@developmentseed/proj';
 import type { Device, Texture } from '@luma.gl/core';
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import type {
-  AddRasterOptions,
-  RasterLayerState,
-  RenderEngine,
+import {
+  RASTER_MAX_ZOOM,
+  RASTER_MIN_ZOOM,
+  type AddRasterOptions,
+  type RasterLayerState,
+  type RenderEngine,
 } from '../core/types';
 import { colormapsPngUrl } from '../raster/colormaps';
 import { createResilientEpsgResolver } from '../raster/epsg-resolver';
@@ -419,6 +421,13 @@ export class LayerManager {
   private _attribStyleReady = false;
   private _onAttribStyleLoad: (() => void) | null = null;
   private _destroyed = false;
+  // Map 'zoom' listener that re-runs a deck.gl rebuild when a layer crosses a
+  // min/max-zoom boundary. The native (cog-tiler-wasm / titiler) engines get
+  // MapLibre's own per-layer minzoom/maxzoom, so they need no listener.
+  private _onZoom: (() => void) | null = null;
+  // Signature of the set of deck.gl layers currently within their zoom range,
+  // so the zoom listener only rebuilds when that set actually changes.
+  private _zoomVisibleSig = '';
 
   /**
    * Creates a LayerManager bound to a map.
@@ -442,6 +451,11 @@ export class LayerManager {
     this._titilerEndpoint =
       options?.titilerEndpoint?.trim() || DEFAULT_TITILER_ENDPOINT;
     this._deps = { ...DEFAULT_DEPS, ...deps };
+    // Re-render the deck.gl overlay whenever the map crosses a layer's zoom
+    // boundary, so per-layer minZoom/maxZoom hide/show the raster (the deck.gl
+    // engine has no MapLibre layer to carry a native zoom range).
+    this._onZoom = () => this._syncZoomVisibility();
+    this._map.on('zoom', this._onZoom);
   }
 
   /** The id of the layer currently selected for editing, or null. */
@@ -1017,6 +1031,10 @@ export class LayerManager {
       this._map.off('load', this._onAttribStyleLoad);
       this._onAttribStyleLoad = null;
     }
+    if (this._onZoom) {
+      this._map.off('zoom', this._onZoom);
+      this._onZoom = null;
+    }
     if (this._overlay) {
       this._deps.removeOverlay(this._map, this._overlay);
       this._overlay = null;
@@ -1415,15 +1433,55 @@ export class LayerManager {
       return;
     }
     if (!this._overlay) return;
-    const layers = this._layers
+    const renderable = this._layers.filter(
+      (l) =>
+        (l.geotiff || l.mosaicAssets) &&
+        l.state.visible &&
+        !this._crsFailed.has(l.id) &&
+        this._withinZoomRange(l.state),
+    );
+    // Cache the in-range set so the zoom listener can tell a boundary crossing
+    // from an ordinary zoom that leaves every layer's visibility unchanged.
+    this._zoomVisibleSig = renderable.map((l) => l.id).join('|');
+    const layers = renderable.flatMap((l) => this._buildCogLayers(l));
+    this._overlay.setProps({ layers });
+  }
+
+  /**
+   * Whether a layer draws at the map's current zoom, following MapLibre's
+   * per-layer zoom semantics: visible while `minZoom <= zoom < maxZoom`, hidden
+   * outside that. An unset bound falls back to the full [0, 24] range, so a
+   * layer with no constraint always passes.
+   */
+  private _withinZoomRange(state: RasterLayerState): boolean {
+    const zoom = this._map.getZoom();
+    const min = state.minZoom ?? RASTER_MIN_ZOOM;
+    const max = state.maxZoom ?? RASTER_MAX_ZOOM;
+    return zoom >= min && zoom < max;
+  }
+
+  /**
+   * Re-renders the deck.gl overlay when the map zoom crosses a layer's min/max
+   * boundary. Runs on every 'zoom' event, so it stays cheap: it rebuilds only
+   * when the set of in-range layers actually changes, leaving pans and in-range
+   * zooms untouched (a needless rebuild would remount the COGLayers and refetch
+   * their tiles). The native engines carry their zoom range on the MapLibre
+   * layer itself, so this is a no-op for them.
+   */
+  private _syncZoomVisibility(): void {
+    if (this._engine !== 'maplibre-gl-raster' || !this._overlay) return;
+    const sig = this._layers
       .filter(
         (l) =>
           (l.geotiff || l.mosaicAssets) &&
           l.state.visible &&
-          !this._crsFailed.has(l.id),
+          !this._crsFailed.has(l.id) &&
+          this._withinZoomRange(l.state),
       )
-      .flatMap((l) => this._buildCogLayers(l));
-    this._overlay.setProps({ layers });
+      .map((l) => l.id)
+      .join('|');
+    if (sig === this._zoomVisibleSig) return;
+    this._rebuild();
   }
 
   /**

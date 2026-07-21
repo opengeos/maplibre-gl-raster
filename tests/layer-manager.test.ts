@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 import type { GeoTIFF } from '@developmentseed/geotiff';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import {
@@ -75,7 +75,10 @@ function makeHarness(opts?: {
     setPaintProperty: vi.fn(),
     moveLayer: vi.fn(),
     once: vi.fn(),
+    on: vi.fn(),
     off: vi.fn(),
+    getZoom: vi.fn(() => 0),
+    setLayerZoomRange: vi.fn(),
   } as unknown as MapLibreMap;
 
   const loadCogTiler = vi.fn(async () =>
@@ -777,6 +780,98 @@ describe('LayerManager engine selection', () => {
     setProps.mockClear();
     manager.setEngine('maplibre-gl-raster');
     expect(setProps).not.toHaveBeenCalled();
+  });
+});
+
+describe('LayerManager zoom range (deck.gl engine)', () => {
+  /** Sets what the fake map reports for its current zoom. */
+  function setZoom(map: MapLibreMap, zoom: number): void {
+    (map as unknown as { getZoom: Mock }).getZoom.mockReturnValue(zoom);
+  }
+  /** Fires the map 'zoom' handlers the LayerManager registered. */
+  function fireZoom(map: MapLibreMap): void {
+    const onMock = (map as unknown as { on: Mock }).on;
+    for (const [type, handler] of onMock.mock.calls) {
+      if (type === 'zoom') (handler as () => void)();
+    }
+  }
+  /** The layer array from the most recent overlay.setProps call. */
+  function lastLayers(setProps: Mock): unknown[] {
+    return setProps.mock.calls.at(-1)![0].layers;
+  }
+
+  it('drops a layer from the overlay while the zoom sits outside its range', async () => {
+    const { manager, map, setProps } = makeHarness();
+    setZoom(map, 3);
+    const id = await manager.addRaster('https://example.com/a.tif');
+    manager.setState(id, { minZoom: 2, maxZoom: 8 });
+    // In range at zoom 3.
+    expect(lastLayers(setProps)).toHaveLength(1);
+
+    // Zoom past the max: the boundary crossing rebuilds with no layers.
+    setZoom(map, 10);
+    fireZoom(map);
+    expect(lastLayers(setProps)).toHaveLength(0);
+
+    // Zoom back into range: the layer returns.
+    setZoom(map, 5);
+    fireZoom(map);
+    expect(lastLayers(setProps)).toHaveLength(1);
+
+    // Zoom below the min: gone again.
+    setZoom(map, 1);
+    fireZoom(map);
+    expect(lastLayers(setProps)).toHaveLength(0);
+  });
+
+  it('hides a layer immediately when a new max zoom excludes the current zoom', async () => {
+    const { manager, map, setProps } = makeHarness();
+    setZoom(map, 10);
+    const id = await manager.addRaster('https://example.com/a.tif');
+    // Default [0, 24] range: visible at zoom 10.
+    expect(lastLayers(setProps)).toHaveLength(1);
+    // Constrain below the current zoom: the rebuild filters it out at once.
+    manager.setState(id, { maxZoom: 5 });
+    expect(lastLayers(setProps)).toHaveLength(0);
+  });
+
+  it('treats minZoom as inclusive and maxZoom as exclusive (MapLibre semantics)', async () => {
+    const { manager, map, setProps } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif');
+    manager.setState(id, { minZoom: 4, maxZoom: 8 });
+
+    setZoom(map, 4); // exactly minZoom → visible
+    fireZoom(map);
+    expect(lastLayers(setProps)).toHaveLength(1);
+
+    setZoom(map, 8); // exactly maxZoom → hidden
+    fireZoom(map);
+    expect(lastLayers(setProps)).toHaveLength(0);
+  });
+
+  it('does not rebuild on a zoom that leaves every layer in range', async () => {
+    const { manager, map, setProps } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif');
+    manager.setState(id, { minZoom: 0, maxZoom: 20 });
+    const before = setProps.mock.calls.length;
+
+    // Both zooms stay within [0, 20): no boundary crossed, no rebuild.
+    setZoom(map, 5);
+    fireZoom(map);
+    setZoom(map, 12);
+    fireZoom(map);
+    expect(setProps.mock.calls.length).toBe(before);
+  });
+
+  it('stops rebuilding on zoom after destroy', async () => {
+    const { manager, map, setProps } = makeHarness();
+    const id = await manager.addRaster('https://example.com/a.tif');
+    manager.setState(id, { minZoom: 2, maxZoom: 8 });
+    manager.destroy();
+    const before = setProps.mock.calls.length;
+    setZoom(map, 100);
+    fireZoom(map);
+    expect(setProps.mock.calls.length).toBe(before);
   });
 });
 
