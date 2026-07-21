@@ -61,7 +61,10 @@ function makeHarness(opts?: {
     setPaintProperty: vi.fn(),
     moveLayer: vi.fn(),
     once: vi.fn(),
+    on: vi.fn(),
     off: vi.fn(),
+    getZoom: vi.fn(() => 0),
+    setLayerZoomRange: vi.fn(),
   } as unknown as MapLibreMap;
 
   const loadGeoTIFF = vi.fn(async () => makeFakeTiff(3));

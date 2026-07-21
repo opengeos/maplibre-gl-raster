@@ -35,7 +35,10 @@ function makeHarness(opts?: { engine?: 'maplibre-gl-raster' | 'titiler' }) {
     setPaintProperty: vi.fn(),
     moveLayer: vi.fn(),
     once: vi.fn(),
+    on: vi.fn(),
     off: vi.fn(),
+    getZoom: vi.fn(() => 0),
+    setLayerZoomRange: vi.fn(),
   } as unknown as MapLibreMap;
 
   // Return a valid tilejson; the request URL (asserted by tests) already

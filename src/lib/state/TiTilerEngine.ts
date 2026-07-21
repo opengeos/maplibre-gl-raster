@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { GeographicBounds, RasterLayerState } from '../core/types';
+import { resolveZoomRange } from './RasterLayer';
 import type { AutoStats } from '../raster/stats';
 import {
   buildTiTilerParams,
@@ -322,11 +323,14 @@ export class TiTilerEngine {
           ? { maxzoom: tilejson.maxzoom }
           : {}),
       });
+      const { minZoom, maxZoom } = resolveZoomRange(layer.state);
       this._map.addLayer(
         {
           id: lyrId,
           type: 'raster',
           source: srcId,
+          minzoom: minZoom,
+          maxzoom: maxZoom,
           paint: { 'raster-opacity': layer.state.opacity },
         },
         this._beforeMapId(layer),
@@ -365,6 +369,10 @@ export class TiTilerEngine {
     const lyrId = this._lyrId(layer.id);
     if (this._map.getLayer(lyrId)) {
       this._map.setPaintProperty(lyrId, 'raster-opacity', layer.state.opacity);
+      // A min/max-zoom edit leaves the tilejson request unchanged, so it lands
+      // on this fast path too: apply it as a cheap layer update, no refetch.
+      const { minZoom, maxZoom } = resolveZoomRange(layer.state);
+      this._map.setLayerZoomRange(lyrId, minZoom, maxZoom);
     }
   }
 

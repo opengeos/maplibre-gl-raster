@@ -11,6 +11,8 @@ function makeFakeMap(): MapLibreMap {
     removeControl: () => undefined,
     on: () => undefined,
     off: () => undefined,
+    getZoom: () => 0,
+    setLayerZoomRange: () => undefined,
     // Native raster-layer surface touched by the cog-tiler-wasm engine.
     isStyleLoaded: () => true,
     getSource: () => undefined,

@@ -2,6 +2,7 @@ import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
 import type { CogSource, RenderOptions } from 'cog-tiler-wasm';
 import type { GeographicBounds, RasterLayerState } from '../core/types';
 import type { MosaicAsset } from '../raster/mosaic';
+import { resolveZoomRange } from './RasterLayer';
 import { autoRangeFor, statsForBand } from '../raster/render-pipeline';
 import type { AutoStats } from '../raster/stats';
 import { PALETTE_COLORMAP } from '../ui/ColormapPicker';
@@ -496,9 +497,12 @@ export class CogTilerEngine {
       assets: layer.assets ?? null,
       render,
     });
-    // Opacity is a cheap paint change that never needs a tile refetch.
+    // Opacity and the zoom range are cheap layer updates that never need a tile
+    // refetch, so keep them in sync without re-adding the layer.
     if (this._map.getLayer(lyrId)) {
       this._map.setPaintProperty(lyrId, 'raster-opacity', layer.state.opacity);
+      const { minZoom, maxZoom } = resolveZoomRange(layer.state);
+      this._map.setLayerZoomRange(lyrId, minZoom, maxZoom);
     }
   }
 

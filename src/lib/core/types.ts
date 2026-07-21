@@ -99,9 +99,22 @@ export interface RasterLayerState {
   stretch: RasterStretch;
   /** Whether the layer is drawn on the map. */
   visible: boolean;
+  /** Minimum map zoom at which the layer is drawn. Follows MapLibre layer
+   * semantics: at zooms below this the layer is hidden. Defaults to 0 when
+   * omitted. */
+  minZoom?: number;
+  /** Maximum map zoom at which the layer is drawn. Follows MapLibre layer
+   * semantics: at zooms at or above this the layer is hidden. Defaults to 24
+   * when omitted. */
+  maxZoom?: number;
   /** Optional colorbar legend shown on the map for this layer. */
   colorbar?: RasterColorbarState;
 }
+
+/** Lowest zoom a layer can be constrained to (MapLibre's minimum). */
+export const RASTER_MIN_ZOOM = 0;
+/** Highest zoom a layer can be constrained to (MapLibre's maximum). */
+export const RASTER_MAX_ZOOM = 24;
 
 /** Where a raster layer's data came from. */
 export type RasterLayerSource =

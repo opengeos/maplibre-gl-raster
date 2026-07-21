@@ -21,6 +21,7 @@ function makeFakeMap() {
     removeLayer: vi.fn((id: string) => layers.delete(id)),
     removeSource: vi.fn((id: string) => sources.delete(id)),
     setPaintProperty: vi.fn(),
+    setLayerZoomRange: vi.fn(),
     moveLayer: vi.fn(),
     on: vi.fn((t: string, h: (e: unknown) => void) => {
       (handlers.get(t) ?? handlers.set(t, new Set()).get(t)!).add(h);
@@ -105,6 +106,39 @@ describe('TiTilerEngine.sync', () => {
       true,
       5,
     );
+
+    engine.destroy();
+  });
+
+  it('applies the layer state min/max zoom to the native raster layer', async () => {
+    const { map, raw } = makeFakeMap();
+    const fetchTileJson = vi.fn(async () => tileJson());
+    const engine = new TiTilerEngine(map, {
+      endpoint: ENDPOINT,
+      fetchTileJson,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([
+      layer({
+        state: createLayerState({
+          mode: 'single',
+          bands: [1],
+          colormap: 'viridis',
+          minZoom: 6,
+          maxZoom: 11,
+        }),
+      }),
+    ]);
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
+
+    const layerDef = raw.addLayer.mock.calls[0][0] as {
+      minzoom?: number;
+      maxzoom?: number;
+    };
+    expect(layerDef.minzoom).toBe(6);
+    expect(layerDef.maxzoom).toBe(11);
 
     engine.destroy();
   });
