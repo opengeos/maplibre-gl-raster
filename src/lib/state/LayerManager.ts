@@ -419,7 +419,7 @@ export class LayerManager {
   // by layer id. See _syncAttributions.
   private _attributions = new globalThis.Map<string, string>();
   private _attribStyleReady = false;
-  private _onAttribStyleLoad: (() => void) | null = null;
+  private _onAttribStyleData: (() => void) | null = null;
   private _destroyed = false;
   // Map 'zoom' listener that re-runs a deck.gl rebuild when a layer crosses a
   // min/max-zoom boundary. The native (cog-tiler-wasm / titiler) engines get
@@ -1027,9 +1027,9 @@ export class LayerManager {
     for (const id of [...this._attributions.keys()]) {
       this._removeAttribution(id);
     }
-    if (this._onAttribStyleLoad) {
-      this._map.off('load', this._onAttribStyleLoad);
-      this._onAttribStyleLoad = null;
+    if (this._onAttribStyleData) {
+      this._map.off('styledata', this._onAttribStyleData);
+      this._onAttribStyleData = null;
     }
     if (this._onZoom) {
       this._map.off('zoom', this._onZoom);
@@ -1351,18 +1351,21 @@ export class LayerManager {
   private _syncAttributions(): void {
     // addSource/addLayer throw before the style first loads; defer the first
     // sync until then. isStyleLoaded() may dip false again later while sources
-    // load (adding is still safe then), so latch rather than re-check.
+    // load (adding is still safe then), so latch rather than re-check. The wait
+    // is on 'styledata' rather than the one-shot 'load' -- see CogTilerEngine.
     if (!this._attribStyleReady) {
       if (this._map.isStyleLoaded()) {
         this._attribStyleReady = true;
       } else {
-        if (!this._onAttribStyleLoad) {
-          this._onAttribStyleLoad = () => {
-            this._onAttribStyleLoad = null;
+        if (!this._onAttribStyleData) {
+          this._onAttribStyleData = () => {
+            if (!this._map.isStyleLoaded()) return;
+            this._map.off('styledata', this._onAttribStyleData!);
+            this._onAttribStyleData = null;
             this._attribStyleReady = true;
             this._syncAttributions();
           };
-          this._map.once('load', this._onAttribStyleLoad);
+          this._map.on('styledata', this._onAttribStyleData);
         }
         return;
       }

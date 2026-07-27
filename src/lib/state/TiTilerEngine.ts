@@ -108,7 +108,7 @@ export class TiTilerEngine {
   private _pending = new Map<string, string>();
   /** Layers whose bounds were already reported (report once per source url). */
   private _boundsKey = new Map<string, string>();
-  private _onStyleLoad: (() => void) | null = null;
+  private _onStyleData: (() => void) | null = null;
   /** Latches true once the style has loaded; see CogTilerEngine for the
    * rationale (isStyleLoaded may dip false again while sources load). */
   private _styleReady = false;
@@ -159,9 +159,9 @@ export class TiTilerEngine {
   /** Tears the engine down: removes its layers and all caches. */
   destroy(): void {
     this._destroyed = true;
-    if (this._onStyleLoad) {
-      this._map.off('load', this._onStyleLoad);
-      this._onStyleLoad = null;
+    if (this._onStyleData) {
+      this._map.off('styledata', this._onStyleData);
+      this._onStyleData = null;
     }
     if (this._onMapError) {
       (
@@ -212,13 +212,15 @@ export class TiTilerEngine {
       if (this._map.isStyleLoaded()) {
         this._styleReady = true;
       } else {
-        if (!this._onStyleLoad) {
-          this._onStyleLoad = () => {
-            this._onStyleLoad = null;
+        if (!this._onStyleData) {
+          this._onStyleData = () => {
+            if (this._destroyed || !this._map.isStyleLoaded()) return;
+            this._map.off('styledata', this._onStyleData!);
+            this._onStyleData = null;
             this._styleReady = true;
             this._apply();
           };
-          this._map.once('load', this._onStyleLoad);
+          this._map.on('styledata', this._onStyleData);
         }
         return;
       }
