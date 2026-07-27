@@ -13,7 +13,26 @@ function makeFakeMap(options?: { styleLoaded?: boolean }) {
   const sources = new Map<string, unknown>();
   const layers = new Map<string, unknown>();
   const handlers = new Map<string, Set<() => void>>();
+  // Tracked separately so `once` behaves like MapLibre's: fired at most once,
+  // then dropped. A shared set would let a second fire() re-invoke it and hide
+  // exactly the one-shot semantics these tests are about.
+  const onceHandlers = new Map<string, Set<() => void>>();
   let styleLoaded = options?.styleLoaded ?? true;
+  const addHandler = (
+    registry: Map<string, Set<() => void>>,
+    type: string,
+    handler: () => void,
+  ) => {
+    const set = registry.get(type) ?? new Set<() => void>();
+    set.add(handler);
+    registry.set(type, set);
+  };
+  const emit = (type: string) => {
+    for (const handler of [...(handlers.get(type) ?? [])]) handler();
+    const pending = [...(onceHandlers.get(type) ?? [])];
+    onceHandlers.get(type)?.clear();
+    for (const handler of pending) handler();
+  };
   const map = {
     isStyleLoaded: () => styleLoaded,
     getSource: (id: string) => sources.get(id),
@@ -26,17 +45,15 @@ function makeFakeMap(options?: { styleLoaded?: boolean }) {
     setLayerZoomRange: vi.fn(),
     moveLayer: vi.fn(),
     once: vi.fn((type: string, handler: () => void) => {
-      const set = handlers.get(type) ?? new Set();
-      set.add(handler);
-      handlers.set(type, set);
+      addHandler(onceHandlers, type, handler);
     }),
     on: vi.fn((type: string, handler: () => void) => {
-      const set = handlers.get(type) ?? new Set();
-      set.add(handler);
-      handlers.set(type, set);
+      addHandler(handlers, type, handler);
     }),
+    // MapLibre's off() also removes a pending once listener.
     off: vi.fn((type: string, handler: () => void) => {
       handlers.get(type)?.delete(handler);
+      onceHandlers.get(type)?.delete(handler);
     }),
   };
   return {
@@ -45,15 +62,14 @@ function makeFakeMap(options?: { styleLoaded?: boolean }) {
     layers,
     raw: map,
     /** Fires an event without changing isStyleLoaded(). */
-    fire: (type: string) => {
-      for (const handler of [...(handlers.get(type) ?? [])]) handler();
-    },
+    fire: emit,
     /** Marks the style loaded and fires the event the engine waits on. */
     finishStyleLoad: (type = 'styledata') => {
       styleLoaded = true;
-      for (const handler of [...(handlers.get(type) ?? [])]) handler();
+      emit(type);
     },
-    listenerCount: (type: string) => handlers.get(type)?.size ?? 0,
+    listenerCount: (type: string) =>
+      (handlers.get(type)?.size ?? 0) + (onceHandlers.get(type)?.size ?? 0),
   };
 }
 
