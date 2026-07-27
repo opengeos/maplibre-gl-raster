@@ -210,11 +210,10 @@ export class CogTilerEngine {
   private _applied = new Map<string, string>();
   /** Monotonic tile-URL version per layer, bumped to refetch on settings edits. */
   private _versions = new Map<string, number>();
-  private _onStyleLoad: (() => void) | null = null;
+  private _onStyleData: (() => void) | null = null;
   /** Latches true once the style has loaded. After that, `isStyleLoaded()` may
-   * dip false again while sources load - which must NOT re-gate later syncs
-   * (the one-shot 'load' event never fires twice), or stats-driven re-renders
-   * would be lost. */
+   * dip false again while sources load - which must NOT re-gate later syncs, or
+   * stats-driven re-renders would be lost. */
   private _styleReady = false;
 
   constructor(map: MapLibreMap, deps: CogTilerEngineDeps) {
@@ -259,9 +258,9 @@ export class CogTilerEngine {
   /** Tears the engine down: removes its layers, the protocol, and all caches. */
   destroy(): void {
     this._destroyed = true;
-    if (this._onStyleLoad) {
-      this._map.off('load', this._onStyleLoad);
-      this._onStyleLoad = null;
+    if (this._onStyleData) {
+      this._map.off('styledata', this._onStyleData);
+      this._onStyleData = null;
     }
     this.clear();
     if (this._protocolRegistered) {
@@ -284,19 +283,28 @@ export class CogTilerEngine {
     // addSource/addLayer throw before the style first loads, so defer the very
     // first apply until then. Once loaded, proceed unconditionally: a later
     // isStyleLoaded() === false only means sources are still loading (adding is
-    // still safe), and re-deferring to the one-shot 'load' event would strand
-    // every subsequent sync (e.g. the rescale update once auto-stats arrive).
+    // still safe), and re-deferring would strand every subsequent sync (e.g. the
+    // rescale update once auto-stats arrive).
+    //
+    // The wait is on 'styledata', NOT 'load': MapLibre fires 'load' exactly once
+    // per map, so an engine whose first apply happens after the map has loaded --
+    // while a setStyle swap is in flight, which is what opening a saved project
+    // does -- would attach a one-shot 'load' handler that never fires again and
+    // never add its layers at all. 'styledata' fires on every style load, so
+    // re-checking isStyleLoaded() on each one latches as soon as it settles.
     if (!this._styleReady) {
       if (this._map.isStyleLoaded()) {
         this._styleReady = true;
       } else {
-        if (!this._onStyleLoad) {
-          this._onStyleLoad = () => {
-            this._onStyleLoad = null;
+        if (!this._onStyleData) {
+          this._onStyleData = () => {
+            if (this._destroyed || !this._map.isStyleLoaded()) return;
+            this._map.off('styledata', this._onStyleData!);
+            this._onStyleData = null;
             this._styleReady = true;
             this._apply();
           };
-          this._map.once('load', this._onStyleLoad);
+          this._map.on('styledata', this._onStyleData);
         }
         return;
       }

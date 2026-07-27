@@ -9,11 +9,13 @@ import { createLayerState } from '../src/lib/state/RasterLayer';
 import type { AutoStats } from '../src/lib/raster/stats';
 
 /** A fake map recording the source/layer mutations the engine performs. */
-function makeFakeMap() {
+function makeFakeMap(options?: { styleLoaded?: boolean }) {
   const sources = new Map<string, unknown>();
   const layers = new Map<string, unknown>();
+  const handlers = new Map<string, Set<() => void>>();
+  let styleLoaded = options?.styleLoaded ?? true;
   const map = {
-    isStyleLoaded: () => true,
+    isStyleLoaded: () => styleLoaded,
     getSource: (id: string) => sources.get(id),
     getLayer: (id: string) => layers.get(id),
     addSource: vi.fn((id: string, def: unknown) => sources.set(id, def)),
@@ -23,10 +25,36 @@ function makeFakeMap() {
     setPaintProperty: vi.fn(),
     setLayerZoomRange: vi.fn(),
     moveLayer: vi.fn(),
-    once: vi.fn(),
-    off: vi.fn(),
+    once: vi.fn((type: string, handler: () => void) => {
+      const set = handlers.get(type) ?? new Set();
+      set.add(handler);
+      handlers.set(type, set);
+    }),
+    on: vi.fn((type: string, handler: () => void) => {
+      const set = handlers.get(type) ?? new Set();
+      set.add(handler);
+      handlers.set(type, set);
+    }),
+    off: vi.fn((type: string, handler: () => void) => {
+      handlers.get(type)?.delete(handler);
+    }),
   };
-  return { map: map as unknown as MapLibreMap, sources, layers, raw: map };
+  return {
+    map: map as unknown as MapLibreMap,
+    sources,
+    layers,
+    raw: map,
+    /** Fires an event without changing isStyleLoaded(). */
+    fire: (type: string) => {
+      for (const handler of [...(handlers.get(type) ?? [])]) handler();
+    },
+    /** Marks the style loaded and fires the event the engine waits on. */
+    finishStyleLoad: (type = 'styledata') => {
+      styleLoaded = true;
+      for (const handler of [...(handlers.get(type) ?? [])]) handler();
+    },
+    listenerCount: (type: string) => handlers.get(type)?.size ?? 0,
+  };
 }
 
 /** A fake cog-tiler-wasm module with a single rendering source. */
@@ -71,6 +99,55 @@ afterEach(() => {
 });
 
 describe('CogTilerEngine.sync', () => {
+  // Regression: the engine used to wait on the one-shot 'load' event, which
+  // MapLibre fires exactly once per map. An engine whose first sync happens
+  // after the map has loaded -- while a setStyle swap is in flight, which is
+  // what opening a saved project does -- attached a handler that never fired
+  // again and silently never added its layers (opengeos/GeoLibre#1463).
+  it('still adds its layers when the style settles after the map already loaded', async () => {
+    const { map, raw, finishStyleLoad } = makeFakeMap({ styleLoaded: false });
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    // Nothing yet: the style cannot accept addSource/addLayer.
+    expect(raw.addLayer).not.toHaveBeenCalled();
+    // The wait must be repeatable, not a one-shot 'load' subscription.
+    expect(raw.once).not.toHaveBeenCalledWith('load', expect.anything());
+
+    finishStyleLoad();
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
+  });
+
+  it('ignores a styledata burst fired while the style is still loading', async () => {
+    const { map, raw, fire, finishStyleLoad, listenerCount } = makeFakeMap({
+      styleLoaded: false,
+    });
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    // styledata fires repeatedly while a style loads; only the one that leaves
+    // isStyleLoaded() true may release the gate.
+    fire('styledata');
+    fire('styledata');
+    expect(raw.addLayer).not.toHaveBeenCalled();
+    expect(listenerCount('styledata')).toBe(1);
+
+    finishStyleLoad();
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
+    // And the listener is detached once it has served its purpose.
+    expect(listenerCount('styledata')).toBe(0);
+  });
+
   it('loads the module, opens the source, and adds a MapLibre raster layer', async () => {
     const { map, raw } = makeFakeMap();
     const fake = makeFakeModule();
