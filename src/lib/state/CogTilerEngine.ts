@@ -491,22 +491,26 @@ export class CogTilerEngine {
     const srcId = this._srcId(layer.id);
     const lyrId = this._lyrId(layer.id);
     const exists = !!this._map.getSource(srcId);
+    const registration = {
+      source: entry?.source ?? null,
+      assets: layer.assets ?? null,
+      render,
+    };
     if (!exists) {
+      // WebKit can dispatch a custom-protocol request synchronously from
+      // addLayer(). Publish the renderer first so that initial request cannot
+      // observe a missing entry and cache an empty tile.
+      this._registry.set(layer.id, registration);
       this._addMapLayer(layer, renderKey);
     } else if (this._applied.get(layer.id) !== renderKey) {
       // RasterTileSource has no live tiles setter, so re-add with a bumped
       // version to make MapLibre refetch with the new settings.
       this._removeMapLayer(layer.id);
+      this._registry.set(layer.id, registration);
       this._addMapLayer(layer, renderKey);
+    } else {
+      this._registry.set(layer.id, registration);
     }
-    // Register the render settings AFTER any remove/add cycle: _removeMapLayer
-    // clears the registry, and the protocol handler reads it per tile, so a
-    // stale-cleared entry would make every tile render blank.
-    this._registry.set(layer.id, {
-      source: entry?.source ?? null,
-      assets: layer.assets ?? null,
-      render,
-    });
     // Opacity and the zoom range are cheap layer updates that never need a tile
     // refetch, so keep them in sync without re-adding the layer.
     if (this._map.getLayer(lyrId)) {
