@@ -68,6 +68,15 @@ function makeFakeMap(options?: { styleLoaded?: boolean }) {
       styleLoaded = true;
       emit(type);
     },
+    /** Simulates setStyle(): custom map artifacts disappear, then the new
+     * style settles and emits styledata. */
+    replaceStyle: () => {
+      styleLoaded = false;
+      sources.clear();
+      layers.clear();
+      styleLoaded = true;
+      emit('styledata');
+    },
     listenerCount: (type: string) =>
       (handlers.get(type)?.size ?? 0) + (onceHandlers.get(type)?.size ?? 0),
   };
@@ -160,8 +169,32 @@ describe('CogTilerEngine.sync', () => {
 
     finishStyleLoad();
     await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
-    // And the listener is detached once it has served its purpose.
+    // It stays attached so a later setStyle can restore native layers.
+    expect(listenerCount('styledata')).toBe(1);
+    engine.destroy();
     expect(listenerCount('styledata')).toBe(0);
+  });
+
+  it('re-adds its native source and layer after the map style is replaced', async () => {
+    const { map, raw, replaceStyle } = makeFakeMap();
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalledTimes(1));
+
+    replaceStyle();
+
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalledTimes(2));
+    expect(raw.addSource).toHaveBeenCalledTimes(2);
+    // The COG itself remains open; only MapLibre's discarded style artifacts
+    // are rebuilt.
+    expect(fake.openCog).toHaveBeenCalledTimes(1);
+    engine.destroy();
   });
 
   it('loads the module, opens the source, and adds a MapLibre raster layer', async () => {
