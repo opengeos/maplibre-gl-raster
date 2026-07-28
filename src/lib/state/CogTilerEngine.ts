@@ -280,6 +280,18 @@ export class CogTilerEngine {
    * loaded and the wasm module is ready. */
   private _apply(): void {
     if (this._destroyed) return;
+    // Keep listening after the first successful apply. setStyle() removes all
+    // custom sources/layers; a later styledata is the only signal that they
+    // need to be reconciled back onto the map. The handler is idempotent:
+    // ordinary styledata events simply run the same existence checks below.
+    if (!this._onStyleData) {
+      this._onStyleData = () => {
+        if (this._destroyed || !this._map.isStyleLoaded()) return;
+        this._styleReady = true;
+        this._apply();
+      };
+      this._map.on('styledata', this._onStyleData);
+    }
     // addSource/addLayer throw before the style first loads, so defer the very
     // first apply until then. Once loaded, proceed unconditionally: a later
     // isStyleLoaded() === false only means sources are still loading (adding is
@@ -296,16 +308,6 @@ export class CogTilerEngine {
       if (this._map.isStyleLoaded()) {
         this._styleReady = true;
       } else {
-        if (!this._onStyleData) {
-          this._onStyleData = () => {
-            if (this._destroyed || !this._map.isStyleLoaded()) return;
-            this._map.off('styledata', this._onStyleData!);
-            this._onStyleData = null;
-            this._styleReady = true;
-            this._apply();
-          };
-          this._map.on('styledata', this._onStyleData);
-        }
         return;
       }
     }

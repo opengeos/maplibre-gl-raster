@@ -24,6 +24,7 @@ function makeFakeMap() {
     setLayerZoomRange: vi.fn(),
     moveLayer: vi.fn(),
     once: vi.fn(),
+    on: vi.fn(),
     off: vi.fn(),
   };
   return { map: map as unknown as MapLibreMap, sources, layers, raw: map };
