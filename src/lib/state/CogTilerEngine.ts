@@ -1,4 +1,6 @@
-import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
+// Named imports, not a default one: MapLibre v6 is ESM-only and dropped its
+// default export.
+import { addProtocol, removeProtocol, type Map as MapLibreMap } from 'maplibre-gl';
 import type { CogSource, RenderOptions } from 'cog-tiler-wasm';
 import type { GeographicBounds, RasterLayerState } from '../core/types';
 import type { MosaicAsset } from '../raster/mosaic';
@@ -265,7 +267,7 @@ export class CogTilerEngine {
     this.clear();
     if (this._protocolRegistered) {
       try {
-        maplibregl.removeProtocol(this._protocol);
+        removeProtocol(this._protocol);
       } catch {
         // best-effort
       }
@@ -361,13 +363,13 @@ export class CogTilerEngine {
 
   private _ensureProtocol(): void {
     if (this._protocolRegistered) return;
-    maplibregl.addProtocol(
+    addProtocol(
       this._protocol,
       // MapLibre's typed handler is broader than the {url}->{data} shape used
       // here; narrow it locally.
       (async (params: { url: string }) => ({
         data: await this._handleTile(params.url),
-      })) as Parameters<typeof maplibregl.addProtocol>[1],
+      })) as Parameters<typeof addProtocol>[1],
     );
     this._protocolRegistered = true;
   }
