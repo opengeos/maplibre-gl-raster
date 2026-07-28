@@ -9,7 +9,10 @@ import { createLayerState } from '../src/lib/state/RasterLayer';
 import type { AutoStats } from '../src/lib/raster/stats';
 
 /** A fake map recording the source/layer mutations the engine performs. */
-function makeFakeMap(options?: { styleLoaded?: boolean }) {
+function makeFakeMap(options?: {
+  styleLoaded?: boolean;
+  onAddLayer?: () => void;
+}) {
   const sources = new Map<string, unknown>();
   const layers = new Map<string, unknown>();
   const handlers = new Map<string, Set<() => void>>();
@@ -38,7 +41,10 @@ function makeFakeMap(options?: { styleLoaded?: boolean }) {
     getSource: (id: string) => sources.get(id),
     getLayer: (id: string) => layers.get(id),
     addSource: vi.fn((id: string, def: unknown) => sources.set(id, def)),
-    addLayer: vi.fn((def: { id: string }) => layers.set(def.id, def)),
+    addLayer: vi.fn((def: { id: string }) => {
+      layers.set(def.id, def);
+      options?.onAddLayer?.();
+    }),
     removeLayer: vi.fn((id: string) => layers.delete(id)),
     removeSource: vi.fn((id: string) => sources.delete(id)),
     setPaintProperty: vi.fn(),
@@ -298,6 +304,41 @@ describe('CogTilerEngine.sync', () => {
       rescale: [[0, 3000]],
       nodata: -9999,
     });
+
+    engine.destroy();
+  });
+
+  it('can render a tile requested synchronously while addLayer runs', async () => {
+    const addProtocol = vi.spyOn(maplibregl, 'addProtocol');
+    let firstTile: Promise<{ data: Uint8Array }> | null = null;
+    const { map, raw } = makeFakeMap({
+      onAddLayer: () => {
+        const [scheme, handler] = addProtocol.mock.calls.at(-1)!;
+        firstTile = handler(
+          { url: `${scheme}://a/1/0/0` } as never,
+          new AbortController(),
+        ) as Promise<{ data: Uint8Array }>;
+      },
+    });
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
+    expect(firstTile).not.toBeNull();
+    const result = await firstTile!;
+
+    expect(fake.renderTilePNG).toHaveBeenCalledWith(
+      1,
+      0,
+      0,
+      expect.any(Object),
+    );
+    expect([...result.data]).toEqual([137, 80, 78, 71]);
 
     engine.destroy();
   });
