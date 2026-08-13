@@ -17,13 +17,28 @@ type LogStretchProps = { strength: number };
 /** Discards pixels whose red channel is NaN. Float32 COGs commonly use
  * NaN as the nodata sentinel, but the upstream `FilterNoDataVal` does an
  * `==` comparison which IEEE 754 says is always false for NaN. Use this
- * module instead when the COG's declared nodata value is NaN. */
+ * module instead when the COG's declared nodata value is NaN.
+ *
+ * The test is a raw IEEE-754 bit-pattern check (exponent all ones and a
+ * non-zero mantissa) rather than the GLSL `isnan()` intrinsic. `isnan()` is
+ * unreliable on ANGLE's Direct3D 11 backend — the default on Windows for both
+ * Chrome and the Tauri/WebView2 desktop shell — where the HLSL compiler is
+ * free to fold it to a constant `false` under fast-math assumptions, so NaN
+ * nodata rendered as an opaque colormap border instead of a transparent gap
+ * (opengeos/maplibre-gl-raster#64). `floatBitsToUint` lowers to HLSL `asuint`,
+ * a pure reinterpret with no float arithmetic for the optimizer to remove, so
+ * the check survives on every backend. `float != float` is *not* a safe
+ * substitute: it is the exact comparison those same fast-math passes drop. */
 export const FilterNaN = {
   name: 'filterNaN',
   inject: {
     'fs:DECKGL_FILTER_COLOR': `
-  if (isnan(color.r)) {
-    discard;
+  {
+    uint filterNaNBits = floatBitsToUint(color.r);
+    if ((filterNaNBits & 0x7f800000u) == 0x7f800000u &&
+        (filterNaNBits & 0x007fffffu) != 0u) {
+      discard;
+    }
   }
 `,
   },

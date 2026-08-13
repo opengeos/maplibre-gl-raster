@@ -124,7 +124,8 @@ function effectiveNodata(
 /** Build the nodata-discard module appropriate for the chosen value.
  * Float32 COGs frequently use NaN as the nodata sentinel; FilterNoDataVal's
  * `color.r == nodata` comparison is always false for NaN per IEEE 754, so
- * we route NaN nodata through a custom isnan() shader instead. */
+ * we route NaN nodata through the custom bit-pattern FilterNaN shader
+ * instead. */
 function nodataModule(
   nodata: number,
   sampleScale: number,
@@ -186,7 +187,7 @@ function pickMapping(
 /** Push the nodata-discard modules for a tile, in the correct order. Filters
  * nodata BEFORE any rescale / gamma / colormap so the comparison happens
  * against the texture's native sample value. NaN nodata uses the custom
- * isnan() shader; everything else uses FilterNoDataVal with the value
+ * FilterNaN shader; everything else uses FilterNoDataVal with the value
  * normalized into the GPU's sample space (uint8 255 → 1.0 for r8unorm). Also
  * applies implicit NaN-as-nodata for float COGs — IEEE-754 NaN is invalid by
  * definition, and GDAL/QGIS treat it as transparent even when the file
