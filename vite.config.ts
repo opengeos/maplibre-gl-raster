@@ -50,11 +50,27 @@ export default defineConfig({
         // Optional peer dependency for the cog-tiler-wasm engine, imported
         // lazily; never bundled.
         /^cog-tiler-wasm($|\/)/,
+        // The @developmentseed GeoTIFF stack must NOT be bundled here.
+        // `DecoderPool` creates its decode worker with
+        // `new Worker(new URL("./worker.js", import.meta.url))`. Bundling it
+        // makes Vite emit that worker as one of OUR assets and rewrite the
+        // reference to a root-absolute `/assets/worker-<hash>.js`, wrapped in
+        // `/* @vite-ignore */` so no downstream bundler can touch it. That path
+        // only resolves if a consumer happens to serve this package's own
+        // `dist/assets/` at their site root, which no consumer does: the app
+        // requests `/assets/worker-<hash>.js`, gets its SPA fallback HTML back
+        // instead of a module, and every tile then fails to decode.
+        //
+        // Left external, the consumer's own bundler sees the original relative
+        // `new URL("./worker.js", import.meta.url)` inside node_modules and
+        // emits + rewrites the worker itself, which is the one thing that
+        // works in both a dev server and a production build. These are real
+        // `dependencies`, so consumers already install them.
+        /^@developmentseed\//,
       ],
       output: {
         assetFileNames: (assetInfo) => {
-          if (assetInfo.name === "style.css")
-            return "maplibre-gl-raster.css";
+          if (assetInfo.name === "style.css") return "maplibre-gl-raster.css";
           return assetInfo.name || "";
         },
       },
