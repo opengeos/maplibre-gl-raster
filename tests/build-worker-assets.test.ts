@@ -17,11 +17,16 @@ import geolibreConfig from "../vite.geolibre.config";
  *
  * Two different fixes, because the two outputs are consumed differently:
  *
- * - The **library** leaves the stack external, so the consumer's own bundler
- *   sees the original relative worker URL and emits it correctly.
+ * - The **library** leaves that one package external, so the consumer's own
+ *   bundler sees the original relative worker URL and emits it correctly.
  * - The **GeoLibre plugin** bundle is self-contained and is served from a
  *   plugin folder, so it keeps the worker but needs `base: "./"` to reference
  *   it relative to the chunk that loads it.
+ *
+ * The externalization has to stay scoped to `@developmentseed/geotiff`: taking
+ * the whole scope out also exposes `deck.gl-raster`'s `colormaps.png` as a bare
+ * import, which plain Node cannot load (it parses the PNG as JavaScript), so
+ * every consumer test running in a node environment dies on import.
  *
  * These assert against the resolved config objects, and the externals case
  * against the specifiers Rollup will actually test, rather than against the
@@ -38,15 +43,22 @@ function isExternal(specifier: string): boolean {
 }
 
 describe("worker asset resolution", () => {
-  it("keeps the @developmentseed stack external in the library build", () => {
-    // The package that owns the worker, plus the rest of the stack that would
-    // otherwise be bundled a second time alongside it.
+  it("keeps the package that owns the worker external in the library build", () => {
     expect(isExternal("@developmentseed/geotiff")).toBe(true);
-    expect(isExternal("@developmentseed/deck.gl-geotiff")).toBe(true);
+    expect(isExternal("@developmentseed/geotiff/pool")).toBe(true);
+  });
+
+  it("keeps the rest of the @developmentseed scope bundled", () => {
+    // Especially the PNG: as a bare import it resolves to an asset URL under a
+    // bundler but is unloadable in plain Node, which breaks consumers' tests.
+    expect(
+      isExternal("@developmentseed/deck.gl-raster/gpu-modules/colormaps.png"),
+    ).toBe(false);
     expect(isExternal("@developmentseed/deck.gl-raster/gpu-modules")).toBe(
-      true,
+      false,
     );
-    expect(isExternal("@developmentseed/proj")).toBe(true);
+    expect(isExternal("@developmentseed/deck.gl-geotiff")).toBe(false);
+    expect(isExternal("@developmentseed/proj")).toBe(false);
   });
 
   it("still bundles everything else it always bundled", () => {
