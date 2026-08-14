@@ -50,8 +50,8 @@ export default defineConfig({
         // Optional peer dependency for the cog-tiler-wasm engine, imported
         // lazily; never bundled.
         /^cog-tiler-wasm($|\/)/,
-        // The @developmentseed GeoTIFF stack must NOT be bundled here.
-        // `DecoderPool` creates its decode worker with
+        // `@developmentseed/geotiff` must NOT be bundled here. Its
+        // `DecoderPool` creates the decode worker with
         // `new Worker(new URL("./worker.js", import.meta.url))`. Bundling it
         // makes Vite emit that worker as one of OUR assets and rewrite the
         // reference to a root-absolute `/assets/worker-<hash>.js`, wrapped in
@@ -64,9 +64,18 @@ export default defineConfig({
         // Left external, the consumer's own bundler sees the original relative
         // `new URL("./worker.js", import.meta.url)` inside node_modules and
         // emits + rewrites the worker itself, which is the one thing that
-        // works in both a dev server and a production build. These are real
-        // `dependencies`, so consumers already install them.
-        /^@developmentseed\//,
+        // works in both a dev server and a production build. It is a real
+        // `dependency`, so consumers already install it.
+        //
+        // Scoped to this one package on purpose. Externalizing the whole
+        // `@developmentseed/*` scope also exposes
+        // `@developmentseed/deck.gl-raster/gpu-modules/colormaps.png` as a bare
+        // import, which a bundler resolves to an asset URL but plain Node
+        // cannot load at all — it parses the PNG as JavaScript and dies with
+        // `SyntaxError: Invalid or unexpected token`. That breaks every
+        // consumer test that runs under `node --test`/vitest in a node
+        // environment. Bundled, the PNG stays a `data:` URL as it always was.
+        /^@developmentseed\/geotiff($|\/)/,
       ],
       output: {
         assetFileNames: (assetInfo) => {
