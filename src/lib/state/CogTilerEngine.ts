@@ -1,16 +1,20 @@
 // Named imports, not a default one: MapLibre v6 is ESM-only and dropped its
 // default export.
-import { addProtocol, removeProtocol, type Map as MapLibreMap } from 'maplibre-gl';
-import type { CogSource, RenderOptions } from 'cog-tiler-wasm';
-import type { GeographicBounds, RasterLayerState } from '../core/types';
-import type { MosaicAsset } from '../raster/mosaic';
-import { resolveZoomRange } from './RasterLayer';
-import { autoRangeFor, statsForBand } from '../raster/render-pipeline';
-import type { AutoStats } from '../raster/stats';
-import { PALETTE_COLORMAP } from '../ui/ColormapPicker';
+import {
+  addProtocol,
+  removeProtocol,
+  type Map as MapLibreMap,
+} from "maplibre-gl";
+import type { CogSource, RenderOptions } from "cog-tiler-wasm";
+import type { GeographicBounds, RasterLayerState } from "../core/types";
+import type { MosaicAsset } from "../raster/mosaic";
+import { resolveZoomRange } from "./RasterLayer";
+import { autoRangeFor, statsForBand } from "../raster/render-pipeline";
+import type { AutoStats } from "../raster/stats";
+import { PALETTE_COLORMAP } from "../ui/ColormapPicker";
 
 /** The lazily-imported `cog-tiler-wasm` module surface the engine relies on. */
-export type CogTilerModule = typeof import('cog-tiler-wasm');
+export type CogTilerModule = typeof import("cog-tiler-wasm");
 
 /** A layer the engine should render, projected from a managed RasterLayer. */
 export interface CogEngineLayer {
@@ -45,12 +49,58 @@ export interface CogTilerEngineDeps {
     bounds: GeographicBounds,
     zoomTo: boolean,
   ) => void;
+  /** Reports statistics decoded by the same COG source that renders the layer. */
+  onStats?: (layerId: string, stats: AutoStats) => void;
   /** Reports an open / module-load failure (layerId omitted for global ones). */
   onError: (layerId: string | undefined, error: Error) => void;
   /** Fires once the wasm module has loaded. Until then the engine can only
    * assume a baseline colormap set, so the owner re-renders the panel here to
    * pick up {@link CogTilerEngine.supportedColormaps}. */
   onReady?: () => void;
+}
+
+type CogBandStats = {
+  min?: number;
+  max?: number;
+  histogram?: [number[], number[]];
+};
+
+/** Convert cog-tiler's TiTiler-style statistics into the panel's 128-bin shape. */
+function fromCogStatistics(raw: Record<string, CogBandStats>): AutoStats {
+  const perBand = new Map<
+    number,
+    { min: number; max: number; histogram: number[] }
+  >();
+  for (const [key, stats] of Object.entries(raw)) {
+    const band = Number(key.replace(/^b/, ""));
+    if (
+      !Number.isInteger(band) ||
+      !Number.isFinite(stats.min) ||
+      !Number.isFinite(stats.max)
+    ) {
+      continue;
+    }
+    const histogram = new Array<number>(128).fill(0);
+    const counts = stats.histogram?.[0] ?? [];
+    for (let i = 0; i < counts.length; i++) {
+      const target = Math.min(
+        127,
+        Math.floor(((i + 0.5) / counts.length) * 128),
+      );
+      histogram[target] += counts[i] ?? 0;
+    }
+    perBand.set(band, { min: stats.min!, max: stats.max!, histogram });
+  }
+  const values = [...perBand.values()];
+  if (values.length === 0) return { perBand: null, global: null };
+  const global = {
+    min: values.reduce((sum, s) => sum + s.min, 0) / values.length,
+    max: values.reduce((sum, s) => sum + s.max, 0) / values.length,
+    histogram: values[0].histogram.map((_, i) =>
+      values.reduce((sum, s) => sum + (s.histogram[i] ?? 0), 0),
+    ),
+  };
+  return { perBand, global };
 }
 
 /**
@@ -69,19 +119,19 @@ export interface CogTilerEngineDeps {
  * a greyscale image rather than a blank tile.
  */
 export const COG_TILER_COLORMAPS: readonly string[] = [
-  'viridis',
-  'magma',
-  'plasma',
-  'inferno',
-  'cividis',
-  'turbo',
-  'terrain',
-  'blues',
-  'greens',
-  'reds',
-  'rdylgn',
-  'spectral',
-  'gray',
+  "viridis",
+  "magma",
+  "plasma",
+  "inferno",
+  "cividis",
+  "turbo",
+  "terrain",
+  "blues",
+  "greens",
+  "reds",
+  "rdylgn",
+  "spectral",
+  "gray",
 ];
 
 /** A blank tile: cog-tiler returns an empty buffer for tiles outside the COG. */
@@ -261,7 +311,7 @@ export class CogTilerEngine {
   destroy(): void {
     this._destroyed = true;
     if (this._onStyleData) {
-      this._map.off('styledata', this._onStyleData);
+      this._map.off("styledata", this._onStyleData);
       this._onStyleData = null;
     }
     this.clear();
@@ -292,7 +342,7 @@ export class CogTilerEngine {
         this._styleReady = true;
         this._apply();
       };
-      this._map.on('styledata', this._onStyleData);
+      this._map.on("styledata", this._onStyleData);
     }
     // addSource/addLayer throw before the style first loads, so defer the very
     // first apply until then. Once loaded, proceed unconditionally: a later
@@ -378,16 +428,22 @@ export class CogTilerEngine {
    * tile with the layer's current settings. */
   private _handleTile = async (url: string): Promise<Uint8Array> => {
     try {
-      const rest = url.slice(url.indexOf('://') + 3);
-      const [path] = rest.split('?');
-      const [layerId, zs, xs, ys] = path.split('/');
+      const rest = url.slice(url.indexOf("://") + 3);
+      const [path] = rest.split("?");
+      const [layerId, zs, xs, ys] = path.split("/");
       const z = Number(zs);
       const x = Number(xs);
       const y = Number(ys);
       const entry = this._registry.get(layerId);
       if (!entry || ![z, x, y].every(Number.isFinite)) return EMPTY_TILE;
       if (entry.assets) {
-        return await this._renderMosaicTile(entry.assets, entry.render, z, x, y);
+        return await this._renderMosaicTile(
+          entry.assets,
+          entry.render,
+          z,
+          x,
+          y,
+        );
       }
       if (!entry.source) return EMPTY_TILE;
       return await entry.source.renderTilePNG(z, x, y, entry.render);
@@ -516,7 +572,7 @@ export class CogTilerEngine {
     // Opacity and the zoom range are cheap layer updates that never need a tile
     // refetch, so keep them in sync without re-adding the layer.
     if (this._map.getLayer(lyrId)) {
-      this._map.setPaintProperty(lyrId, 'raster-opacity', layer.state.opacity);
+      this._map.setPaintProperty(lyrId, "raster-opacity", layer.state.opacity);
       const { minZoom, maxZoom } = resolveZoomRange(layer.state);
       this._map.setLayerZoomRange(lyrId, minZoom, maxZoom);
     }
@@ -537,7 +593,7 @@ export class CogTilerEngine {
     const version = (this._versions.get(layer.id) ?? 0) + 1;
     this._versions.set(layer.id, version);
     this._map.addSource(srcId, {
-      type: 'raster',
+      type: "raster",
       tiles: [`${this._protocol}://${layer.id}/{z}/{x}/{y}?v=${version}`],
       tileSize: 256,
       // A large mosaic hides below the zoom where a single tile would span most
@@ -548,9 +604,9 @@ export class CogTilerEngine {
     this._map.addLayer(
       {
         id: lyrId,
-        type: 'raster',
+        type: "raster",
         source: srcId,
-        paint: { 'raster-opacity': layer.state.opacity },
+        paint: { "raster-opacity": layer.state.opacity },
       },
       this._beforeMapId(layer),
     );
@@ -598,6 +654,21 @@ export class CogTilerEngine {
             layer.zoomTo,
           );
         }
+        if (typeof source.statistics === "function") {
+          void source.statistics().then(
+            (stats) => {
+              if (this._destroyed || this._sources.get(layer.id) !== entry)
+                return;
+              this._deps.onStats?.(
+                layer.id,
+                fromCogStatistics(stats as Record<string, CogBandStats>),
+              );
+            },
+            () => {
+              // Statistics are an enhancement; rendering keeps its fallback range.
+            },
+          );
+        }
         this._apply();
       },
       (err) => {
@@ -619,7 +690,7 @@ export class CogTilerEngine {
     // (A - B) / (A + B) here. Degrade to a colormapped view of operand A —
     // the default 'maplibre-gl-raster' engine renders the real index. The
     // panel notes this limitation when the CPU engine is active.
-    const colormapped = s.mode === 'single' || s.mode === 'index';
+    const colormapped = s.mode === "single" || s.mode === "index";
     const bidx = colormapped
       ? [s.bands[0] ?? 1]
       : s.bands.slice(0, 3).map((b) => b || 1);
@@ -646,7 +717,7 @@ export class CogTilerEngine {
     }
     // A numeric override maps directly; 'auto' uses the COG's declared nodata
     // (omit) and 'off' has no cog-tiler equivalent, so it is omitted too.
-    if (typeof s.nodata === 'number') opts.nodata = s.nodata;
+    if (typeof s.nodata === "number") opts.nodata = s.nodata;
     return opts;
   }
 
@@ -682,7 +753,7 @@ export class CogTilerEngine {
   }
 
   private _sourceKey(source: string | File): string {
-    return typeof source === 'string'
+    return typeof source === "string"
       ? source
       : `file:${source.name}:${source.size}:${source.lastModified}`;
   }

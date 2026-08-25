@@ -1,77 +1,77 @@
-import type { Layer } from '@deck.gl/core';
-import { MapboxOverlay } from '@deck.gl/mapbox';
+import type { Layer } from "@deck.gl/core";
+import { MapboxOverlay } from "@deck.gl/mapbox";
 import {
   COGLayer,
   MosaicLayer,
   type MosaicSource,
-} from '@developmentseed/deck.gl-geotiff';
+} from "@developmentseed/deck.gl-geotiff";
 import {
   createColormapTexture,
   decodeColormapSprite,
-} from '@developmentseed/deck.gl-raster/gpu-modules';
-import { parseColormap, type GeoTIFF } from '@developmentseed/geotiff';
-import type { EpsgResolver } from '@developmentseed/proj';
-import type { Device, Texture } from '@luma.gl/core';
-import type { Map as MapLibreMap } from 'maplibre-gl';
+} from "@developmentseed/deck.gl-raster/gpu-modules";
+import { parseColormap, type GeoTIFF } from "@developmentseed/geotiff";
+import type { EpsgResolver } from "@developmentseed/proj";
+import type { Device, Texture } from "@luma.gl/core";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import {
   RASTER_MAX_ZOOM,
   RASTER_MIN_ZOOM,
   type AddRasterOptions,
   type RasterLayerState,
   type RenderEngine,
-} from '../core/types';
-import { colormapsPngUrl } from '../raster/colormaps';
-import { createResilientEpsgResolver } from '../raster/epsg-resolver';
-import { loadGeoTIFF as defaultLoadGeoTIFF } from '../raster/load-geotiff';
+} from "../core/types";
+import { colormapsPngUrl } from "../raster/colormaps";
+import { createResilientEpsgResolver } from "../raster/epsg-resolver";
+import { loadGeoTIFF as defaultLoadGeoTIFF } from "../raster/load-geotiff";
 import {
   buildIndexCompositeRenderTile,
   buildPaletteCompositeRenderTile,
   buildRgbCompositeRenderTile,
   buildSingleCompositeRenderTile,
-} from '../raster/render-pipeline';
+} from "../raster/render-pipeline";
 import {
   computeAutoStats as defaultComputeAutoStats,
   mergeAutoStats,
   readBandNames,
   type AutoStats,
-} from '../raster/stats';
+} from "../raster/stats";
 import {
   makeMultiBandTileLoader,
   MAX_BAND_SLOTS,
   type MultiBandTileData,
-} from '../raster/tile-loader';
-import { WebMercatorCOGLayer } from '../raster/web-mercator-cog-layer';
+} from "../raster/tile-loader";
+import { WebMercatorCOGLayer } from "../raster/web-mercator-cog-layer";
 import {
   isVrtFile,
   isVrtUrl,
   loadVrt as defaultLoadVrt,
   VrtUnsupportedError,
   type VrtMosaic,
-} from '../raster/vrt';
-import { generateId } from '../utils/helpers';
+} from "../raster/vrt";
+import { generateId } from "../utils/helpers";
 import {
   CogTilerEngine,
   type CogEngineLayer,
   type CogTilerModule,
   COG_TILER_COLORMAPS,
-} from './CogTilerEngine';
+} from "./CogTilerEngine";
 import {
   defaultFetchTileJson,
   TiTilerEngine,
   type TiTilerEngineLayer,
-} from './TiTilerEngine';
+} from "./TiTilerEngine";
 import {
   DEFAULT_TITILER_ENDPOINT,
   isMosaicJsonUrl,
   type TiTilerTileJson,
-} from '../raster/titiler';
+} from "../raster/titiler";
 import {
   loadMosaic as defaultLoadMosaic,
   mosaicInitialView,
   mosaicMinZoom,
   type MosaicAsset,
   type ParsedMosaic,
-} from '../raster/mosaic';
+} from "../raster/mosaic";
 
 /** A deck.gl {@link MosaicSource} augmented with the asset URL the engine opens
  * and renders. */
@@ -82,10 +82,10 @@ import {
   type GeographicBounds,
   type RasterLayer,
   type RasterMember,
-} from './RasterLayer';
+} from "./RasterLayer";
 
 /** Default engine when none is configured: the deck.gl GPU pipeline. */
-export const DEFAULT_ENGINE: RenderEngine = 'maplibre-gl-raster';
+export const DEFAULT_ENGINE: RenderEngine = "maplibre-gl-raster";
 
 /**
  * Most member COGs a mosaic VRT may expand to.
@@ -101,7 +101,7 @@ export const MAX_VRT_MEMBERS = 32;
  * ids. Chosen so it cannot collide with `generateId`'s output — but a
  * caller-supplied id may contain it, so only the *last* occurrence marks the
  * suffix these helpers added. */
-const MEMBER_ID_SEPARATOR = '::m';
+const MEMBER_ID_SEPARATOR = "::m";
 
 /** Strips the member suffix added by {@link memberLayerId}, yielding the id of
  * the owning RasterLayer. */
@@ -154,12 +154,12 @@ function assertTiled(tiff: GeoTIFF, label?: string): void {
   if (tiff.isTiled) return;
   const subject = label
     ? `The VRT source "${label}" is striped, not tiled,`
-    : 'This GeoTIFF is striped, not tiled,';
+    : "This GeoTIFF is striped, not tiled,";
   throw new Error(
     `${subject} so it cannot be streamed as map tiles. Convert it to a tiled ` +
-      'Cloud-Optimized GeoTIFF (COG) first, for example with `rio cogeo ' +
-      'create input.tif output.tif` or `gdal_translate input.tif output.tif ' +
-      '-of COG`, then load the result.',
+      "Cloud-Optimized GeoTIFF (COG) first, for example with `rio cogeo " +
+      "create input.tif output.tif` or `gdal_translate input.tif output.tif " +
+      "-of COG`, then load the result.",
   );
 }
 
@@ -199,9 +199,9 @@ function clampBoundsLatitude(bounds: GeographicBounds): GeographicBounds {
 function fetchBandsFor(layer: RasterLayer): number[] {
   const bands = layer.state.bands;
   const sampled =
-    layer.state.mode === 'rgb'
+    layer.state.mode === "rgb"
       ? (bands && bands.length > 0 ? bands : [1, 2, 3]).slice(0, 3)
-      : layer.state.mode === 'index'
+      : layer.state.mode === "index"
         ? // Index mode needs both operands of (A - B) / (A + B).
           (bands && bands.length > 0 ? bands : [1, 2]).slice(0, 2)
         : [bands?.[0] ?? 1];
@@ -227,7 +227,7 @@ function fetchBandsFor(layer: RasterLayer): number[] {
  * colormap, rescale and RGB-channel-reorder changes that don't alter the set.
  */
 function cogLayerId(layer: RasterLayer, fetchBands: number[]): string {
-  return `${layer.id}#b${fetchBands.join('-')}`;
+  return `${layer.id}#b${fetchBands.join("-")}`;
 }
 
 /** Uploads an embedded color table as a 2D-array texture for the Colormap
@@ -243,19 +243,19 @@ function createPaletteTexture(device: Device, palette: ImageData): Texture {
     palette.data.byteLength,
   );
   return device.createTexture({
-    dimension: '2d-array',
-    format: 'rgba8unorm',
+    dimension: "2d-array",
+    format: "rgba8unorm",
     width: palette.width,
     height: 1,
     depth: 1,
     data: bytes,
     mipLevels: 1,
     sampler: {
-      minFilter: 'nearest',
-      magFilter: 'nearest',
-      addressModeU: 'clamp-to-edge',
-      addressModeV: 'clamp-to-edge',
-      addressModeW: 'clamp-to-edge',
+      minFilter: "nearest",
+      magFilter: "nearest",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+      addressModeW: "clamp-to-edge",
     },
   });
 }
@@ -281,11 +281,11 @@ function extractPalette(tiff: GeoTIFF): ImageData | null {
 
 /** Events emitted by the LayerManager. */
 export type LayerManagerEvent =
-  | 'rasteradd'
-  | 'rasterremove'
-  | 'rasterchange'
-  | 'rasterselect'
-  | 'error';
+  | "rasteradd"
+  | "rasterremove"
+  | "rasterchange"
+  | "rasterselect"
+  | "error";
 
 /** Payload passed to LayerManager event handlers. */
 export interface LayerManagerEventData {
@@ -351,7 +351,7 @@ const DEFAULT_DEPS: LayerManagerDeps = {
   // when the user selects the cog-tiler-wasm engine. A literal specifier so
   // Vite/consumers resolve and code-split it; the lib build externalizes it
   // (see vite.config.ts) so it never enters the default bundle.
-  loadCogTiler: () => import('cog-tiler-wasm'),
+  loadCogTiler: () => import("cog-tiler-wasm"),
   fetchTileJson: defaultFetchTileJson,
   createOverlay: (map, options) => {
     const overlay = new MapboxOverlay({
@@ -427,7 +427,7 @@ export class LayerManager {
   private _onZoom: (() => void) | null = null;
   // Signature of the set of deck.gl layers currently within their zoom range,
   // so the zoom listener only rebuilds when that set actually changes.
-  private _zoomVisibleSig = '';
+  private _zoomVisibleSig = "";
 
   /**
    * Creates a LayerManager bound to a map.
@@ -455,7 +455,7 @@ export class LayerManager {
     // boundary, so per-layer minZoom/maxZoom hide/show the raster (the deck.gl
     // engine has no MapLibre layer to carry a native zoom range).
     this._onZoom = () => this._syncZoomVisibility();
-    this._map.on('zoom', this._onZoom);
+    this._map.on("zoom", this._onZoom);
   }
 
   /** The id of the layer currently selected for editing, or null. */
@@ -490,7 +490,7 @@ export class LayerManager {
    * {@link COG_TILER_COLORMAPS} baseline applies.
    */
   get supportedColormaps(): ReadonlySet<string> | null {
-    if (this._engine !== 'cog-tiler-wasm') return null;
+    if (this._engine !== "cog-tiler-wasm") return null;
     return this._cogEngine?.supportedColormaps ?? new Set(COG_TILER_COLORMAPS);
   }
 
@@ -506,12 +506,12 @@ export class LayerManager {
     if (next === this._titilerEndpoint) return;
     this._titilerEndpoint = next;
     this._titilerEngine?.setEndpoint(next);
-    if (this._engine === 'titiler') {
+    if (this._engine === "titiler") {
       // Re-render every layer from the new server.
       this._titilerEngine?.clear();
       this._rebuild();
     }
-    this._emit({ type: 'rasterchange' });
+    this._emit({ type: "rasterchange" });
   }
 
   /**
@@ -526,15 +526,16 @@ export class LayerManager {
     this._engine = engine;
     // Tear down the map artifacts of every engine that is no longer active, so
     // two engines never draw the same layer at once.
-    if (engine !== 'maplibre-gl-raster') this._overlay?.setProps({ layers: [] });
-    if (engine !== 'cog-tiler-wasm') this._cogEngine?.clear();
-    if (engine !== 'titiler') this._titilerEngine?.clear();
+    if (engine !== "maplibre-gl-raster")
+      this._overlay?.setProps({ layers: [] });
+    if (engine !== "cog-tiler-wasm") this._cogEngine?.clear();
+    if (engine !== "titiler") this._titilerEngine?.clear();
     // Ensure the newly active engine's artifacts exist before rendering into
     // them — switching to deck.gl before any layer was added on it must create
     // the overlay, or _rebuild would render nothing.
     this._ensureEngine();
     this._rebuild();
-    this._emit({ type: 'rasterchange' });
+    this._emit({ type: "rasterchange" });
   }
 
   /** All managed layers in draw order (first = bottom). */
@@ -562,11 +563,11 @@ export class LayerManager {
     source: string | File,
     options?: AddRasterOptions,
   ): Promise<string> {
-    const id = options?.id ?? generateId('raster');
+    const id = options?.id ?? generateId("raster");
     if (this.getLayer(id)) {
       throw new Error(`Raster layer id "${id}" already exists`);
     }
-    const isFile = typeof source !== 'string';
+    const isFile = typeof source !== "string";
     const url = isFile ? URL.createObjectURL(source) : source;
     // A `.json` source is a mosaic manifest (MosaicJSON or STAC), not a single
     // GeoTIFF, so it takes a distinct load path below. A local `.json` file is
@@ -577,8 +578,8 @@ export class LayerManager {
       id,
       name: options?.name ?? deriveLayerName(isFile ? source.name : source),
       source: isFile
-        ? { kind: 'file', fileName: source.name, objectUrl: url }
-        : { kind: 'url', url },
+        ? { kind: "file", fileName: source.name, objectUrl: url }
+        : { kind: "url", url },
       url,
       file: isFile ? source : null,
       state: createLayerState(options?.state),
@@ -608,7 +609,7 @@ export class LayerManager {
     this._layers.push(layer);
     this._ensureEngine();
     this.select(layer.id);
-    this._emit({ type: 'rasteradd', layerId: layer.id });
+    this._emit({ type: "rasteradd", layerId: layer.id });
 
     try {
       // A mosaic manifest (MosaicJSON or STAC) has no single local GeoTIFF. It
@@ -626,10 +627,10 @@ export class LayerManager {
         // dropped as a local file works too); TiTiler renders only a remote
         // MosaicJSON.
         const canRender =
-          this._engine === 'maplibre-gl-raster' ||
-          this._engine === 'cog-tiler-wasm' ||
-          (this._engine === 'titiler' &&
-            layer.mosaicKind === 'mosaicjson' &&
+          this._engine === "maplibre-gl-raster" ||
+          this._engine === "cog-tiler-wasm" ||
+          (this._engine === "titiler" &&
+            layer.mosaicKind === "mosaicjson" &&
             !isFile);
         if (!canRender) {
           // setEngine rebuilds (rendering the new layer) and emits rasterchange.
@@ -637,11 +638,11 @@ export class LayerManager {
         } else {
           this._ensureEngine();
           this._rebuild();
-          this._emit({ type: 'rasterchange', layerId: layer.id });
+          this._emit({ type: "rasterchange", layerId: layer.id });
         }
         if (layer.bounds && layer.zoomTo) {
           layer.zoomTo = false;
-          if (this._engine === 'titiler') {
+          if (this._engine === "titiler") {
             // TiTiler renders the whole mosaic server-side as one raster source,
             // so fit the full extent — floored to the native minzoom, below
             // which no tiles exist.
@@ -676,18 +677,18 @@ export class LayerManager {
       if (!layer.userPickedMode) {
         // 1 or 2 bands → single + colormap. RGB on 2 bands leaves blue empty.
         if (layer.bandCount! >= 3) {
-          layer.state.mode = 'rgb';
+          layer.state.mode = "rgb";
           layer.state.bands = [1, 2, 3];
         } else {
-          layer.state.mode = 'single';
+          layer.state.mode = "single";
           layer.state.bands = [1];
           // Prefer the image's embedded color table when it carries one;
           // otherwise the 'gray' default from DEFAULT_LAYER_STATE applies.
-          if (layer.palette) layer.state.colormap = 'palette';
+          if (layer.palette) layer.state.colormap = "palette";
         }
       }
       this._rebuild();
-      this._emit({ type: 'rasterchange', layerId: layer.id });
+      this._emit({ type: "rasterchange", layerId: layer.id });
       this._computeStats(layer);
       return layer.id;
     } catch (err) {
@@ -695,8 +696,8 @@ export class LayerManager {
       if (!this._destroyed && this.getLayer(layer.id)) {
         layer.loading = false;
         layer.error = error;
-        this._emit({ type: 'error', layerId: layer.id, error });
-        this._emit({ type: 'rasterchange', layerId: layer.id });
+        this._emit({ type: "error", layerId: layer.id, error });
+        this._emit({ type: "rasterchange", layerId: layer.id });
       }
       throw error;
     }
@@ -724,9 +725,9 @@ export class LayerManager {
       throw new VrtUnsupportedError(
         `This VRT mosaics ${mosaic.members.length} files. Each one is drawn as ` +
           `its own tiled layer here, and more than ${MAX_VRT_MEMBERS} would ` +
-          'overwhelm the browser. Merge it into a single Cloud-Optimized ' +
-          'GeoTIFF first with `gdal_translate mosaic.vrt mosaic.tif -of COG`, ' +
-          'then load that.',
+          "overwhelm the browser. Merge it into a single Cloud-Optimized " +
+          "GeoTIFF first with `gdal_translate mosaic.vrt mosaic.tif -of COG`, " +
+          "then load that.",
       );
     }
 
@@ -741,7 +742,7 @@ export class LayerManager {
           const error = new Error(
             `This VRT references "${member.url}", which could not be loaded ` +
               `(${detail}). Every source must be a CORS-enabled Cloud-` +
-              'Optimized GeoTIFF reachable from the browser.',
+              "Optimized GeoTIFF reachable from the browser.",
           );
           // Preserve the underlying cause without relying on the ErrorOptions
           // constructor argument (not in this project's TS lib target).
@@ -766,7 +767,7 @@ export class LayerManager {
         throw new VrtUnsupportedError(
           `This VRT declares ${mosaic.bandCount} band(s), but its source ` +
             `"${member.url}" has only ${member.geotiff.count}. Every source ` +
-            'must supply every band the VRT exposes.',
+            "must supply every band the VRT exposes.",
         );
       }
     }
@@ -777,7 +778,7 @@ export class LayerManager {
     // The VRT is the dataset-level authority on nodata: honour its declaration
     // when the caller left nodata on 'auto' (which otherwise reads whatever the
     // individual members happen to declare, if anything).
-    if (mosaic.nodata !== null && layer.state.nodata === 'auto') {
+    if (mosaic.nodata !== null && layer.state.nodata === "auto") {
       layer.state.nodata = mosaic.nodata;
     }
   }
@@ -813,12 +814,12 @@ export class LayerManager {
       layer.palette = extractPalette(tiff);
       if (!layer.userPickedMode) {
         if (layer.bandCount >= 3) {
-          layer.state.mode = 'rgb';
+          layer.state.mode = "rgb";
           layer.state.bands = [1, 2, 3];
         } else {
-          layer.state.mode = 'single';
+          layer.state.mode = "single";
           layer.state.bands = [1];
-          if (layer.palette) layer.state.colormap = 'palette';
+          if (layer.palette) layer.state.colormap = "palette";
         }
       }
       // Sample this one asset's statistics for a shared rescale window.
@@ -830,7 +831,7 @@ export class LayerManager {
       if (this._destroyed || !this.getLayer(layer.id)) return;
       layer.bandCount = 3;
       if (!layer.userPickedMode) {
-        layer.state.mode = 'rgb';
+        layer.state.mode = "rgb";
         layer.state.bands = [1, 2, 3];
       }
     }
@@ -845,7 +846,7 @@ export class LayerManager {
         if (signal.aborted || this._destroyed) return;
         layer.autoStats = stats;
         this._rebuild();
-        this._emit({ type: 'rasterchange', layerId: layer.id });
+        this._emit({ type: "rasterchange", layerId: layer.id });
       },
       () => {
         // Stats are an enhancement; rendering falls back to a [0, 1] rescale.
@@ -887,7 +888,7 @@ export class LayerManager {
     if (index === -1) return;
     const [layer] = this._layers.splice(index, 1);
     layer.abort.abort();
-    if (layer.source.kind === 'file') {
+    if (layer.source.kind === "file") {
       URL.revokeObjectURL(layer.source.objectUrl);
     }
     this._crsFailed.delete(id);
@@ -896,7 +897,7 @@ export class LayerManager {
       this.select(this._layers[this._layers.length - 1]?.id ?? null);
     }
     this._rebuild();
-    this._emit({ type: 'rasterremove', layerId: id });
+    this._emit({ type: "rasterremove", layerId: id });
   }
 
   /**
@@ -913,7 +914,7 @@ export class LayerManager {
     }
     layer.state = { ...layer.state, ...patch };
     this._rebuild();
-    this._emit({ type: 'rasterchange', layerId: id });
+    this._emit({ type: "rasterchange", layerId: id });
   }
 
   /**
@@ -935,7 +936,7 @@ export class LayerManager {
     if (id !== null && !this.getLayer(id)) return;
     if (this._selectedId === id) return;
     this._selectedId = id;
-    this._emit({ type: 'rasterselect', layerId: id ?? undefined });
+    this._emit({ type: "rasterselect", layerId: id ?? undefined });
   }
 
   /**
@@ -964,7 +965,7 @@ export class LayerManager {
     const [layer] = this._layers.splice(from, 1);
     this._layers.splice(to, 0, layer);
     this._rebuild();
-    this._emit({ type: 'rasterchange', layerId: id });
+    this._emit({ type: "rasterchange", layerId: id });
   }
 
   /**
@@ -1017,7 +1018,7 @@ export class LayerManager {
     this._destroyed = true;
     for (const layer of this._layers) {
       layer.abort.abort();
-      if (layer.source.kind === 'file') {
+      if (layer.source.kind === "file") {
         URL.revokeObjectURL(layer.source.objectUrl);
       }
       this._destroyPaletteTexture(layer);
@@ -1028,11 +1029,11 @@ export class LayerManager {
       this._removeAttribution(id);
     }
     if (this._onAttribStyleData) {
-      this._map.off('styledata', this._onAttribStyleData);
+      this._map.off("styledata", this._onAttribStyleData);
       this._onAttribStyleData = null;
     }
     if (this._onZoom) {
-      this._map.off('zoom', this._onZoom);
+      this._map.off("zoom", this._onZoom);
       this._onZoom = null;
     }
     if (this._overlay) {
@@ -1062,7 +1063,7 @@ export class LayerManager {
   }
 
   private _emit(
-    data: Omit<LayerManagerEventData, 'type'> & { type: LayerManagerEvent },
+    data: Omit<LayerManagerEventData, "type"> & { type: LayerManagerEvent },
   ): void {
     const handlers = this._handlers.get(data.type);
     if (handlers) {
@@ -1072,15 +1073,15 @@ export class LayerManager {
 
   /** Ensures the artifacts for the active engine exist. */
   private _ensureEngine(): void {
-    if (this._engine === 'maplibre-gl-raster') this._ensureOverlay();
-    else if (this._engine === 'cog-tiler-wasm') this._ensureCogEngine();
+    if (this._engine === "maplibre-gl-raster") this._ensureOverlay();
+    else if (this._engine === "cog-tiler-wasm") this._ensureCogEngine();
     else this._ensureTiTilerEngine();
   }
 
   private _ensureOverlay(): void {
     // Only the deck.gl engine needs the overlay; skip it under cog-tiler so we
     // don't spin up an unused WebGL device.
-    if (this._engine !== 'maplibre-gl-raster') return;
+    if (this._engine !== "maplibre-gl-raster") return;
     if (this._overlay) return;
     this._overlay = this._deps.createOverlay(this._map, {
       interleaved: this._interleaved,
@@ -1096,10 +1097,17 @@ export class LayerManager {
       this._cogEngine = new CogTilerEngine(this._map, {
         loadModule: this._deps.loadCogTiler,
         onBounds: (id, bounds, zoomTo) => this._onCogBounds(id, bounds, zoomTo),
+        onStats: (id, stats) => {
+          const layer = this.getLayer(id);
+          if (!layer || this._engine !== "cog-tiler-wasm") return;
+          layer.autoStats = stats;
+          this._rebuild();
+          this._emit({ type: "rasterchange", layerId: id });
+        },
         onError: (id, error) => this._onCogError(id, error),
         // The module reports which colormaps it actually has; re-emit so the
         // panel's picker widens from the baseline to the real set.
-        onReady: () => this._emit({ type: 'rasterchange' }),
+        onReady: () => this._emit({ type: "rasterchange" }),
       });
     }
     return this._cogEngine;
@@ -1133,13 +1141,13 @@ export class LayerManager {
         (l) =>
           l.state.visible &&
           !this._crsFailed.has(l.id) &&
-          l.source.kind === 'url' &&
-          (l.mosaicKind === 'mosaicjson' || (!!l.geotiff && !l.members)),
+          l.source.kind === "url" &&
+          (l.mosaicKind === "mosaicjson" || (!!l.geotiff && !l.members)),
       )
       .map((l) => ({
         id: l.id,
         url: l.url,
-        kind: l.isMosaicJson ? ('mosaicjson' as const) : ('cog' as const),
+        kind: l.isMosaicJson ? ("mosaicjson" as const) : ("cog" as const),
         state: l.state,
         autoStats: l.autoStats,
         beforeId: l.beforeId,
@@ -1179,7 +1187,7 @@ export class LayerManager {
       layer.zoomTo = false;
       this._fitBounds(layer.bounds, minzoom);
     }
-    if (boundsArrived) this._emit({ type: 'rasterchange', layerId: layer.id });
+    if (boundsArrived) this._emit({ type: "rasterchange", layerId: layer.id });
   }
 
   /** Surfaces a cog-tiler open / module-load failure as a layer (or global)
@@ -1195,10 +1203,10 @@ export class LayerManager {
         layer.loading = false;
         layer.error = error;
       }
-      this._emit({ type: 'error', layerId, error });
-      this._emit({ type: 'rasterchange', layerId });
+      this._emit({ type: "error", layerId, error });
+      this._emit({ type: "rasterchange", layerId });
     } else {
-      this._emit({ type: 'error', error });
+      this._emit({ type: "error", error });
     }
   }
 
@@ -1266,7 +1274,7 @@ export class LayerManager {
       this._rebuild();
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      this._emit({ type: 'error', error });
+      this._emit({ type: "error", error });
     }
   }
 
@@ -1283,12 +1291,15 @@ export class LayerManager {
    */
   private _computeStats(layer: RasterLayer): void {
     if (!layer.geotiff) return;
+    // The WASM engine samples through its own decoder after opening the source.
+    // Reusing @developmentseed/geotiff here would byte-swap big-endian samples.
+    if (this._engine === "cog-tiler-wasm") return;
     const signal = layer.abort.signal;
     const apply = (stats: AutoStats): void => {
       if (signal.aborted || this._destroyed) return;
       layer.autoStats = stats;
       this._rebuild();
-      this._emit({ type: 'rasterchange', layerId: layer.id });
+      this._emit({ type: "rasterchange", layerId: layer.id });
     };
     void (async () => {
       try {
@@ -1301,9 +1312,7 @@ export class LayerManager {
           apply(mergeAutoStats(perMember));
           return;
         }
-        apply(
-          await this._deps.computeAutoStats(layer.geotiff!, signal, apply),
-        );
+        apply(await this._deps.computeAutoStats(layer.geotiff!, signal, apply));
       } catch {
         // Stats are an enhancement; rendering falls back to [0, 1] rescale.
       }
@@ -1322,7 +1331,10 @@ export class LayerManager {
     // instead so the initial view lands inside the tiled range. Falls back to
     // plain fitBounds when the map lacks cameraForBounds (e.g. test fakes).
     const map = this._map as unknown as {
-      cameraForBounds?: (b: unknown, o: unknown) => { center: unknown; zoom: number } | undefined;
+      cameraForBounds?: (
+        b: unknown,
+        o: unknown,
+      ) => { center: unknown; zoom: number } | undefined;
       easeTo?: (o: unknown) => void;
     };
     if (minZoom !== undefined && map.cameraForBounds && map.easeTo) {
@@ -1360,12 +1372,12 @@ export class LayerManager {
         if (!this._onAttribStyleData) {
           this._onAttribStyleData = () => {
             if (!this._map.isStyleLoaded()) return;
-            this._map.off('styledata', this._onAttribStyleData!);
+            this._map.off("styledata", this._onAttribStyleData!);
             this._onAttribStyleData = null;
             this._attribStyleReady = true;
             this._syncAttributions();
           };
-          this._map.on('styledata', this._onAttribStyleData);
+          this._map.on("styledata", this._onAttribStyleData);
         }
         return;
       }
@@ -1392,11 +1404,11 @@ export class LayerManager {
       const helperId = `mlr-attribution-${id}`;
       try {
         this._map.addSource(helperId, {
-          type: 'geojson',
-          data: { type: 'FeatureCollection', features: [] },
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
           attribution,
         });
-        this._map.addLayer({ id: helperId, type: 'circle', source: helperId });
+        this._map.addLayer({ id: helperId, type: "circle", source: helperId });
         this._attributions.set(id, attribution);
       } catch {
         // Transient style churn; the next rebuild retries.
@@ -1421,14 +1433,14 @@ export class LayerManager {
    * layer's tile cache across rebuilds. */
   private _rebuild(): void {
     this._syncAttributions();
-    if (this._engine === 'cog-tiler-wasm') {
+    if (this._engine === "cog-tiler-wasm") {
       // Keep the deck.gl overlay blank (if it was ever created) and let the
       // cog-tiler engine drive the native MapLibre raster layers.
       this._overlay?.setProps({ layers: [] });
       this._ensureCogEngine().sync(this._cogRenderableLayers());
       return;
     }
-    if (this._engine === 'titiler') {
+    if (this._engine === "titiler") {
       // TiTiler renders server-side into native MapLibre raster layers; keep
       // the deck.gl overlay blank (if any) and let the engine drive them.
       this._overlay?.setProps({ layers: [] });
@@ -1445,7 +1457,7 @@ export class LayerManager {
     );
     // Cache the in-range set so the zoom listener can tell a boundary crossing
     // from an ordinary zoom that leaves every layer's visibility unchanged.
-    this._zoomVisibleSig = renderable.map((l) => l.id).join('|');
+    this._zoomVisibleSig = renderable.map((l) => l.id).join("|");
     const layers = renderable.flatMap((l) => this._buildCogLayers(l));
     this._overlay.setProps({ layers });
   }
@@ -1472,7 +1484,7 @@ export class LayerManager {
    * layer itself, so this is a no-op for them.
    */
   private _syncZoomVisibility(): void {
-    if (this._engine !== 'maplibre-gl-raster' || !this._overlay) return;
+    if (this._engine !== "maplibre-gl-raster" || !this._overlay) return;
     const sig = this._layers
       .filter(
         (l) =>
@@ -1482,7 +1494,7 @@ export class LayerManager {
           this._withinZoomRange(l.state),
       )
       .map((l) => l.id)
-      .join('|');
+      .join("|");
     if (sig === this._zoomVisibleSig) return;
     this._rebuild();
   }
@@ -1535,13 +1547,13 @@ export class LayerManager {
   private _buildMosaicLayer(
     layer: RasterLayer,
     pipeline: {
-      renderTile: ReturnType<LayerManager['_renderTileFor']>;
+      renderTile: ReturnType<LayerManager["_renderTileFor"]>;
       fetchBands: number[];
       getTileData: ReturnType<typeof makeMultiBandTileLoader>;
     },
   ): Layer {
     const { renderTile, fetchBands, getTileData } = pipeline;
-    const bandTag = `#b${fetchBands.join('-')}`;
+    const bandTag = `#b${fetchBands.join("-")}`;
     type Source = MosaicRenderSource;
     const assets = layer.mosaicAssets!;
     // Reuse the same sources array across re-renders so MosaicLayer's spatial
@@ -1581,7 +1593,7 @@ export class LayerManager {
       onSourceError: (_source: Source, info: { error: Error }) => {
         // One unreadable asset must not fail the whole mosaic; surface it as a
         // non-fatal error and let the other assets render.
-        this._emit({ type: 'error', layerId: layer.id, error: info.error });
+        this._emit({ type: "error", layerId: layer.id, error: info.error });
       },
       // Below this zoom the mosaic renders nothing, so a low/world view never
       // spins up one COGLayer per asset for the whole extent (undefined for a
@@ -1601,7 +1613,7 @@ export class LayerManager {
   private _buildCogLayer(
     layer: RasterLayer,
     pipeline: {
-      renderTile: ReturnType<LayerManager['_renderTileFor']>;
+      renderTile: ReturnType<LayerManager["_renderTileFor"]>;
       fetchBands: number[];
       getTileData: ReturnType<typeof makeMultiBandTileLoader>;
     },
@@ -1616,7 +1628,7 @@ export class LayerManager {
     // style; a stale id would make the overlay throw on the next style event.
     const cogProps = {
       id: member
-        ? `${memberLayerId(layer.id, member.index)}#b${fetchBands.join('-')}`
+        ? `${memberLayerId(layer.id, member.index)}#b${fetchBands.join("-")}`
         : cogLayerId(layer, fetchBands),
       geotiff: member ? member.member.geotiff : layer.geotiff!,
       opacity: layer.state.opacity,
@@ -1650,7 +1662,7 @@ export class LayerManager {
           this._fitBounds(layer.bounds);
         }
         if (boundsArrived) {
-          this._emit({ type: 'rasterchange', layerId: layer.id });
+          this._emit({ type: "rasterchange", layerId: layer.id });
         }
       },
     };
@@ -1679,13 +1691,15 @@ export class LayerManager {
     if (member.bounds) return;
     member.bounds = bounds;
 
-    const reported = layer.members!.flatMap((m) => (m.bounds ? [m.bounds] : []));
+    const reported = layer.members!.flatMap((m) =>
+      m.bounds ? [m.bounds] : [],
+    );
     layer.bounds = unionBounds(reported);
     if (layer.zoomTo && reported.length === layer.members!.length) {
       layer.zoomTo = false;
       this._fitBounds(layer.bounds!);
     }
-    this._emit({ type: 'rasterchange', layerId: layer.id });
+    this._emit({ type: "rasterchange", layerId: layer.id });
   }
 
   /** Records a CRS-resolution failure once: marks the layer errored, drops it
@@ -1704,8 +1718,8 @@ export class LayerManager {
     const error = err instanceof Error ? err : new Error(String(err));
     layer.loading = false;
     layer.error = error;
-    this._emit({ type: 'error', layerId: layer.id, error });
-    this._emit({ type: 'rasterchange', layerId: layer.id });
+    this._emit({ type: "error", layerId: layer.id, error });
+    this._emit({ type: "rasterchange", layerId: layer.id });
   }
 
   /** Returns the beforeId only when that layer exists in the map's current
@@ -1727,8 +1741,8 @@ export class LayerManager {
    * colormap, or RGB compositing. GPU-texture-dependent paths fall back to
    * RGB until the device / textures are ready. */
   private _renderTileFor(layer: RasterLayer) {
-    if (layer.state.mode === 'single') {
-      if (layer.state.colormap === 'palette' && layer.palette) {
+    if (layer.state.mode === "single") {
+      if (layer.state.colormap === "palette" && layer.palette) {
         if (!layer.paletteTexture && this._device) {
           try {
             layer.paletteTexture = createPaletteTexture(
@@ -1740,7 +1754,7 @@ export class LayerManager {
             // named-colormap path on the next rebuild.
             layer.palette = null;
             const error = err instanceof Error ? err : new Error(String(err));
-            this._emit({ type: 'error', layerId: layer.id, error });
+            this._emit({ type: "error", layerId: layer.id, error });
           }
         }
         if (layer.paletteTexture) {
@@ -1759,7 +1773,7 @@ export class LayerManager {
     }
     // Index mode needs the shared colormap texture; until it's ready the RGB
     // fallback below draws the raw bands.
-    if (layer.state.mode === 'index' && this._colormapTexture) {
+    if (layer.state.mode === "index" && this._colormapTexture) {
       return buildIndexCompositeRenderTile(layer.state, this._colormapTexture);
     }
     return buildRgbCompositeRenderTile(layer.state, layer.autoStats);
