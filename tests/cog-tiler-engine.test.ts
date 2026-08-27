@@ -96,7 +96,15 @@ function makeFakeMap(options?: {
 }
 
 /** A fake cog-tiler-wasm module with a single rendering source. */
-function makeFakeModule(opts?: { bounds?: number[]; hasPalette?: boolean }) {
+function makeFakeModule(opts?: {
+  bounds?: number[];
+  hasPalette?: boolean;
+  stats?: Record<string, {
+    min: number;
+    max: number;
+    histogram: [number[], number[]];
+  }>;
+}) {
   const renderTilePNG = vi.fn(async () => new Uint8Array([137, 80, 78, 71]));
   const source = {
     mode: '3857' as const,
@@ -105,6 +113,7 @@ function makeFakeModule(opts?: { bounds?: number[]; hasPalette?: boolean }) {
     boundsLonLat: opts?.bounds ?? [-10, -5, 10, 5],
     hasPalette: opts?.hasPalette ?? false,
     renderTilePNG,
+    statistics: opts?.stats ? vi.fn(async () => opts.stats!) : undefined,
   };
   const openCog = vi.fn(async () => source);
   const init = vi.fn(async () => undefined);
@@ -137,6 +146,37 @@ afterEach(() => {
 });
 
 describe('CogTilerEngine.sync', () => {
+  it('resamples short renderer histograms without artificial gaps', async () => {
+    const { map } = makeFakeMap();
+    const counts = Array.from({ length: 10 }, (_, i) => i + 1);
+    const fake = makeFakeModule({
+      stats: {
+        b1: {
+          min: 0,
+          max: 100,
+          histogram: [counts, Array.from({ length: 11 }, (_, i) => i * 10)],
+        },
+      },
+    });
+    const onStats = vi.fn();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onStats,
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    await vi.waitFor(() => expect(onStats).toHaveBeenCalledOnce());
+
+    const received = onStats.mock.calls[0][1] as AutoStats;
+    const histogram = received.perBand!.get(1)!.histogram;
+    expect(histogram).toHaveLength(128);
+    expect(histogram.every((count) => count > 0)).toBe(true);
+    expect(histogram.reduce((sum, count) => sum + count, 0)).toBeCloseTo(55);
+    engine.destroy();
+  });
+
   it('opens the COG and reports bounds before the map style is ready', async () => {
     const { map, raw } = makeFakeMap({ styleLoaded: false });
     const fake = makeFakeModule();
