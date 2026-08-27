@@ -262,7 +262,8 @@ export class CogTilerEngine {
   private _applied = new Map<string, string>();
   /** Monotonic tile-URL version per layer, bumped to refetch on settings edits. */
   private _versions = new Map<string, number>();
-  private _onStyleData: (() => void) | null = null;
+  private _onStyleReady: (() => void) | null = null;
+  private _onStyleLoading: (() => void) | null = null;
   /** Latches true once the style has loaded. After that, `isStyleLoaded()` may
    * dip false again while sources load - which must NOT re-gate later syncs, or
    * stats-driven re-renders would be lost. */
@@ -310,9 +311,14 @@ export class CogTilerEngine {
   /** Tears the engine down: removes its layers, the protocol, and all caches. */
   destroy(): void {
     this._destroyed = true;
-    if (this._onStyleData) {
-      this._map.off("styledata", this._onStyleData);
-      this._onStyleData = null;
+    if (this._onStyleReady) {
+      this._map.off("styledata", this._onStyleReady);
+      this._map.off("style.load", this._onStyleReady);
+      this._onStyleReady = null;
+    }
+    if (this._onStyleLoading) {
+      this._map.off("styledataloading", this._onStyleLoading);
+      this._onStyleLoading = null;
     }
     this.clear();
     if (this._protocolRegistered) {
@@ -328,22 +334,58 @@ export class CogTilerEngine {
     this._versions.clear();
   }
 
-  /** Reconciles the map with {@link _layers}, deferring until the style is
-   * loaded and the wasm module is ready. */
+  /** Reconciles the map with {@link _layers}. COGs open as soon as the wasm
+   * module is ready so their bounds are available even while the map style is
+   * loading; only MapLibre source/layer mutations wait for the style. */
   private _apply(): void {
     if (this._destroyed) return;
     // Keep listening after the first successful apply. setStyle() removes all
     // custom sources/layers; a later styledata is the only signal that they
     // need to be reconciled back onto the map. The handler is idempotent:
     // ordinary styledata events simply run the same existence checks below.
-    if (!this._onStyleData) {
-      this._onStyleData = () => {
+    if (!this._onStyleReady) {
+      this._onStyleReady = () => {
         if (this._destroyed || !this._map.isStyleLoaded()) return;
         this._styleReady = true;
         this._apply();
       };
-      this._map.on("styledata", this._onStyleData);
+      this._map.on("styledata", this._onStyleReady);
+      // styledata can fire while a style swap is still loading and is not
+      // guaranteed to fire again after isStyleLoaded() becomes true. MapLibre
+      // emits style.load when the replacement style is ready, so listen to it
+      // as the authoritative release for the initial gate. Keeping styledata
+      // too restores custom layers after later style mutations that do not
+      // replace the whole style.
+      this._map.on("style.load", this._onStyleReady);
+      // A completed style is only a latch until setStyle() begins another
+      // replacement. Source requests emit sourcedataloading instead, so this
+      // does not re-gate ordinary raster tile or statistics loading.
+      this._onStyleLoading = () => {
+        this._styleReady = false;
+      };
+      this._map.on("styledataloading", this._onStyleLoading);
     }
+
+    const desired = this._layers;
+    const desiredIds = new Set(desired.map((layer) => layer.id));
+    // Cancel the identity check for pending opens as soon as a layer is
+    // removed. Map artifacts are still cleaned below after the style gate.
+    for (const id of this._sources.keys()) {
+      if (!desiredIds.has(id)) this._sources.delete(id);
+    }
+
+    // Loading a COG and discovering its bounds does not depend on MapLibre's
+    // style. Start that work before the style gate so consumers can fit the
+    // camera even when sync() races a setStyle() call. The source completion
+    // re-enters _apply(), by which time the style will usually be ready too.
+    const mod = this._ensureModule();
+    if (!mod) return; // loading; _apply re-runs when it resolves
+    for (const layer of desired) {
+      // Mosaic bounds come from the manifest, and its member COGs intentionally
+      // open only when MapLibre requests a covering tile.
+      if (!layer.assets) this._ensureSource(layer, mod);
+    }
+
     // addSource/addLayer throw before the style first loads, so defer the very
     // first apply until then. Once loaded, proceed unconditionally: a later
     // isStyleLoaded() === false only means sources are still loading (adding is
@@ -363,12 +405,8 @@ export class CogTilerEngine {
         return;
       }
     }
-    const mod = this._ensureModule();
-    if (!mod) return; // loading; _apply re-runs when it resolves
     this._ensureProtocol();
 
-    const desired = this._layers;
-    const desiredIds = new Set(desired.map((l) => l.id));
     // Drop layers no longer desired (hidden / removed).
     for (const id of [...this._registry.keys()]) {
       if (!desiredIds.has(id)) this._dropLayer(id);

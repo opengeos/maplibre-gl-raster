@@ -74,6 +74,13 @@ function makeFakeMap(options?: {
       styleLoaded = true;
       emit(type);
     },
+    /** Starts a full setStyle() replacement and discards custom artifacts. */
+    beginStyleLoad: () => {
+      styleLoaded = false;
+      sources.clear();
+      layers.clear();
+      emit('styledataloading');
+    },
     /** Simulates setStyle(): custom map artifacts disappear, then the new
      * style settles and emits styledata. */
     replaceStyle: () => {
@@ -130,6 +137,58 @@ afterEach(() => {
 });
 
 describe('CogTilerEngine.sync', () => {
+  it('opens the COG and reports bounds before the map style is ready', async () => {
+    const { map, raw } = makeFakeMap({ styleLoaded: false });
+    const fake = makeFakeModule();
+    const onBounds = vi.fn();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds,
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+
+    await vi.waitFor(() => expect(fake.openCog).toHaveBeenCalled());
+    expect(onBounds).toHaveBeenCalledWith(
+      'a',
+      { west: -10, south: -5, east: 10, north: 5 },
+      true,
+    );
+    // MapLibre mutations remain gated because they throw before style load.
+    expect(raw.addSource).not.toHaveBeenCalled();
+    expect(raw.addLayer).not.toHaveBeenCalled();
+
+    engine.destroy();
+  });
+
+  it('does not report bounds when a layer is removed while its COG opens', async () => {
+    const { map } = makeFakeMap({ styleLoaded: false });
+    const fake = makeFakeModule();
+    let finishOpen!: (source: typeof fake.source) => void;
+    fake.module.openCog = vi.fn(
+      () =>
+        new Promise<typeof fake.source>((resolve) => {
+          finishOpen = resolve;
+        }),
+    );
+    const onBounds = vi.fn();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds,
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    await vi.waitFor(() => expect(fake.module.openCog).toHaveBeenCalled());
+    engine.sync([]);
+    finishOpen(fake.source);
+    await Promise.resolve();
+
+    expect(onBounds).not.toHaveBeenCalled();
+    engine.destroy();
+  });
+
   // Regression: the engine used to wait on the one-shot 'load' event, which
   // MapLibre fires exactly once per map. An engine whose first sync happens
   // after the map has loaded -- while a setStyle swap is in flight, which is
@@ -154,7 +213,7 @@ describe('CogTilerEngine.sync', () => {
     await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
   });
 
-  it('ignores a styledata burst fired while the style is still loading', async () => {
+  it('uses style.load when styledata stops before the style becomes ready', async () => {
     const { map, raw, fire, finishStyleLoad, listenerCount } = makeFakeMap({
       styleLoaded: false,
     });
@@ -166,19 +225,22 @@ describe('CogTilerEngine.sync', () => {
     });
 
     engine.sync([layer()]);
-    // styledata fires repeatedly while a style loads; only the one that leaves
-    // isStyleLoaded() true may release the gate.
+    // styledata can stop before isStyleLoaded() becomes true. The later
+    // style.load event must still release the gate.
     fire('styledata');
     fire('styledata');
     expect(raw.addLayer).not.toHaveBeenCalled();
     expect(listenerCount('styledata')).toBe(1);
 
-    finishStyleLoad();
+    finishStyleLoad('style.load');
     await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
-    // It stays attached so a later setStyle can restore native layers.
+    // Both listeners stay attached so later style replacement and mutation
+    // can restore native layers.
     expect(listenerCount('styledata')).toBe(1);
+    expect(listenerCount('style.load')).toBe(1);
     engine.destroy();
     expect(listenerCount('styledata')).toBe(0);
+    expect(listenerCount('style.load')).toBe(0);
   });
 
   it('re-adds its native source and layer after the map style is replaced', async () => {
@@ -200,6 +262,27 @@ describe('CogTilerEngine.sync', () => {
     // The COG itself remains open; only MapLibre's discarded style artifacts
     // are rebuilt.
     expect(fake.openCog).toHaveBeenCalledTimes(1);
+    engine.destroy();
+  });
+
+  it('re-gates map mutations while a later style replacement loads', async () => {
+    const { map, raw, beginStyleLoad, finishStyleLoad } = makeFakeMap();
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalledTimes(1));
+
+    beginStyleLoad();
+    engine.sync([layer()]);
+    expect(raw.addLayer).toHaveBeenCalledTimes(1);
+
+    finishStyleLoad('style.load');
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalledTimes(2));
     engine.destroy();
   });
 
