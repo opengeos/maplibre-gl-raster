@@ -65,6 +65,37 @@ type CogBandStats = {
   histogram?: [number[], number[]];
 };
 
+/** Resample histogram buckets by their covered interval, preserving the total.
+ * Point-mapping a short histogram leaves artificial empty gaps between bars. */
+function resampleHistogram(counts: number[], targetBins = 128): number[] {
+  const output = new Array<number>(targetBins).fill(0);
+  if (counts.length === 0) return output;
+  if (counts.length === targetBins) return counts.slice();
+
+  const sourceWidth = 1 / counts.length;
+  const targetWidth = 1 / targetBins;
+  for (let source = 0; source < counts.length; source++) {
+    const count = counts[source] ?? 0;
+    if (!Number.isFinite(count) || count === 0) continue;
+    const sourceStart = source * sourceWidth;
+    const sourceEnd = (source + 1) * sourceWidth;
+    const firstTarget = Math.floor(sourceStart * targetBins);
+    const lastTarget = Math.min(
+      targetBins - 1,
+      Math.ceil(sourceEnd * targetBins) - 1,
+    );
+    for (let target = firstTarget; target <= lastTarget; target++) {
+      const overlap = Math.max(
+        0,
+        Math.min(sourceEnd, (target + 1) * targetWidth) -
+          Math.max(sourceStart, target * targetWidth),
+      );
+      output[target] += count * (overlap / sourceWidth);
+    }
+  }
+  return output;
+}
+
 /** Convert cog-tiler's TiTiler-style statistics into the panel's 128-bin shape. */
 function fromCogStatistics(raw: Record<string, CogBandStats>): AutoStats {
   const perBand = new Map<
@@ -80,15 +111,8 @@ function fromCogStatistics(raw: Record<string, CogBandStats>): AutoStats {
     ) {
       continue;
     }
-    const histogram = new Array<number>(128).fill(0);
     const counts = stats.histogram?.[0] ?? [];
-    for (let i = 0; i < counts.length; i++) {
-      const target = Math.min(
-        127,
-        Math.floor(((i + 0.5) / counts.length) * 128),
-      );
-      histogram[target] += counts[i] ?? 0;
-    }
+    const histogram = resampleHistogram(counts);
     perBand.set(band, { min: stats.min!, max: stats.max!, histogram });
   }
   const values = [...perBand.values()];
