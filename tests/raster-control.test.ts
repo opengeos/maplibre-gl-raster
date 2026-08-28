@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { RasterControl } from '../src/lib/core/RasterControl';
 
@@ -205,5 +205,35 @@ describe('RasterControl pixel inspector wiring', () => {
     expect(button.getAttribute('aria-pressed')).toBe('false');
 
     control.onRemove();
+  });
+
+  it('reads a managed layer through the public API', async () => {
+    const control = new RasterControl();
+    const layer = { id: 'raster-1' };
+    const reading = {
+      lngLat: [-84, 35] as [number, number],
+      col: 3,
+      row: 4,
+      bands: [{ index: 1, name: null, value: 12, isNodata: false }],
+    };
+    const read = vi.fn(async (target: typeof layer | null) =>
+      target ? reading : null,
+    );
+    const internals = control as unknown as {
+      _layerManager: { getLayer: (id: string) => typeof layer | null };
+      _inspector: { read: typeof read };
+    };
+    internals._layerManager = {
+      getLayer: (id) => (id === layer.id ? layer : null),
+    };
+    internals._inspector = { read };
+
+    await expect(control.readRasterPixel(layer.id, [-84, 35])).resolves.toEqual(
+      reading,
+    );
+    expect(read).toHaveBeenCalledWith(layer, [-84, 35], undefined);
+    await expect(
+      control.readRasterPixel('missing', [-84, 35]),
+    ).resolves.toBeNull();
   });
 });

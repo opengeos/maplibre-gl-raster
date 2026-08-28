@@ -158,6 +158,21 @@ describe('readPixelValues', () => {
     expect(reading!.bands[1].isNodata).toBe(false);
   });
 
+  it('flags NaN nodata pixels', async () => {
+    const tile = makeBandSeparateTile(1, 4, 4, Number.NaN);
+    const bands = (tile as unknown as { bands: Float32Array[] }).bands;
+    bands[0][11] = Number.NaN;
+    const { tiff } = makeFakeTiff({ tile });
+    const reading = await readPixelValues(tiff, [3.5, 47.5]);
+
+    expect(reading!.bands[0]).toEqual({
+      index: 1,
+      name: null,
+      value: Number.NaN,
+      isNodata: true,
+    });
+  });
+
   it('reads pixel-interleaved tiles', async () => {
     const tile = makeInterleavedTile(3, 4, 4);
     const { tiff } = makeFakeTiff({ tile });
