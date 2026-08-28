@@ -149,7 +149,9 @@ export async function readPixelValues(
       index: b + 1,
       name: names?.get(b + 1) ?? null,
       value,
-      isNodata: nodata !== null && value === nodata,
+      isNodata:
+        nodata !== null &&
+        (Number.isNaN(nodata) ? Number.isNaN(value) : value === nodata),
     });
   }
 

@@ -1,5 +1,6 @@
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl';
 import { createResilientEpsgResolver } from '../raster/epsg-resolver';
+import type { PixelReading } from '../raster/inspect';
 import { DEFAULT_TITILER_ENDPOINT } from '../raster/titiler';
 import { autoRangeFor, statsForBand } from '../raster/render-pipeline';
 import { LayerManager } from '../state/LayerManager';
@@ -434,6 +435,27 @@ export class RasterControl implements IControl {
    */
   isInspecting(): boolean {
     return this._inspector?.enabled ?? false;
+  }
+
+  /**
+   * Read one managed raster at a WGS84 coordinate without enabling inspect UI.
+   *
+   * @param id - Raster layer id
+   * @param lngLat - WGS84 longitude and latitude
+   * @param options - Optional cancellation signal
+   * @returns The pixel reading, or null when the layer is unavailable or the
+   *   coordinate falls outside its data
+   */
+  readRasterPixel(
+    id: string,
+    lngLat: [number, number],
+    options?: { signal?: AbortSignal },
+  ): Promise<PixelReading | null> {
+    const layer = this._layerManager?.getLayer(id) ?? null;
+    return (
+      this._inspector?.read(layer, lngLat, options?.signal) ??
+      Promise.resolve(null)
+    );
   }
 
   /**

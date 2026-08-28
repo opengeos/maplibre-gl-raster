@@ -147,6 +147,36 @@ export class PixelInspector {
     this._enabled = false;
   }
 
+  /**
+   * Read one raster layer at a WGS84 coordinate without changing inspect mode.
+   *
+   * Hosts use this to include raster values in their own identify UI. Mosaic
+   * members and assets follow the same topmost-first selection as the built-in
+   * click inspector.
+   *
+   * @param target - Raster layer to read
+   * @param lngLat - WGS84 longitude and latitude
+   * @param signal - Optional cancellation signal
+   * @returns The pixel reading, or null when the layer is unavailable or the
+   *   coordinate falls outside its data
+   */
+  async read(
+    target: RasterLayer | null,
+    lngLat: [number, number],
+    signal?: AbortSignal,
+  ): Promise<PixelReading | null> {
+    if (!target || !isReadable(target) || signal?.aborted) return null;
+
+    const assets = target.mosaicAssets ? assetsAt(target, lngLat) : null;
+    const images = assets ? [] : imagesAt(target, lngLat);
+    if ((assets ?? images).length === 0) return null;
+
+    const readSignal = signal ?? new AbortController().signal;
+    return assets
+      ? this._readFirstAsset(assets, lngLat, readSignal, target.bandNames)
+      : this._readFirst(images, lngLat, readSignal, target.bandNames);
+  }
+
   private _onClick = (e: MapMouseEvent): void => {
     const lngLat: [number, number] = [e.lngLat.lng, e.lngLat.lat];
     // Cancel any read still in flight from a previous click.
@@ -159,25 +189,11 @@ export class PixelInspector {
       return;
     }
 
-    // A mosaic manifest layer holds no open image: narrow to the assets whose
-    // bbox covers the click and open them on demand.
-    const assets = target.mosaicAssets ? assetsAt(target, lngLat) : null;
-    // For a mosaic VRT layer this narrows to the member(s) covering the click;
-    // an empty list means the point is outside the mosaic, which needs no read.
-    const images = assets ? [] : imagesAt(target, lngLat);
-    if ((assets ?? images).length === 0) {
-      this._show(lngLat, this._messageContent('No data at this location.'));
-      return;
-    }
-
     const controller = new AbortController();
     this._abort = controller;
     this._show(lngLat, this._messageContent('Reading…'));
 
-    (assets
-      ? this._readFirstAsset(assets, lngLat, controller.signal, target.bandNames)
-      : this._readFirst(images, lngLat, controller.signal, target.bandNames)
-    )
+    this.read(target, lngLat, controller.signal)
       .then((reading) => {
         if (controller.signal.aborted) return;
         this._show(

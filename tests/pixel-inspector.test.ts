@@ -128,6 +128,26 @@ describe('PixelInspector', () => {
     expect(popup.addTo).toHaveBeenCalledWith(map);
   });
 
+  it('reads a target programmatically without enabling inspect UI', async () => {
+    const { map } = makeFakeMap();
+    const popup = makePopup();
+    const target = makeTarget();
+    const readPixelValues = vi.fn().mockResolvedValue(reading);
+    const insp = new PixelInspector(map, () => null, {
+      readPixelValues,
+      createPopup: () => popup,
+    });
+
+    await expect(insp.read(target, [3.5, 47.5])).resolves.toEqual(reading);
+    expect(readPixelValues).toHaveBeenCalledWith(
+      target.geotiff,
+      [3.5, 47.5],
+      expect.objectContaining({ bandNames: null }),
+    );
+    expect(map.on).not.toHaveBeenCalled();
+    expect(popup.addTo).not.toHaveBeenCalled();
+  });
+
   it('aborts an in-flight read when a new click arrives', async () => {
     const { map, emit } = makeFakeMap();
     const signals: AbortSignal[] = [];
