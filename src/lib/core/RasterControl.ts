@@ -1,6 +1,6 @@
 import type { IControl, Map as MapLibreMap } from 'maplibre-gl';
 import { createResilientEpsgResolver } from '../raster/epsg-resolver';
-import type { PixelReading } from '../raster/inspect';
+import { readRasterWindow, type PixelReading } from '../raster/inspect';
 import { DEFAULT_TITILER_ENDPOINT } from '../raster/titiler';
 import { autoRangeFor, statsForBand } from '../raster/render-pipeline';
 import { LayerManager } from '../state/LayerManager';
@@ -16,6 +16,8 @@ import type {
   RasterControlState,
   RasterLayerInfo,
   RasterLayerState,
+  RasterWindowOptions,
+  RasterWindowReading,
   RenderEngine,
 } from './types';
 
@@ -456,6 +458,21 @@ export class RasterControl implements IControl {
       this._inspector?.read(layer, lngLat, options?.signal) ??
       Promise.resolve(null)
     );
+  }
+
+  /**
+   * Read a viewport window in one batched operation using the loaded COG and
+   * the nearest suitable overview. This is intended for fast viewport
+   * statistics; callers should not issue one read per sample pixel.
+   */
+  readRasterWindow(
+    id: string,
+    options: RasterWindowOptions,
+  ): Promise<RasterWindowReading | null> {
+    const layer = this._layerManager?.getLayer(id) ?? null;
+    return layer?.geotiff
+      ? readRasterWindow(layer.geotiff, options)
+      : Promise.resolve(null);
   }
 
   /**

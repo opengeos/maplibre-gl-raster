@@ -162,6 +162,41 @@ export interface RasterLayerInfo {
   state: RasterLayerState;
 }
 
+/** Options for reading a raster window from the loaded GeoTIFF cache. */
+export interface RasterWindowOptions {
+  /** WGS84 viewport bounds. */
+  bounds: [number, number, number, number];
+  /** Output sample width; an integer from 2 to 1024. @default 32 */
+  width?: number;
+  /** Output sample height; an integer from 2 to 1024. @default 32 */
+  height?: number;
+  /** 1-based band; must not exceed the raster's band count. @default 1 */
+  band?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Values sampled from a raster viewport window. The `width` x `height` sample
+ * grid is spread over the intersection of `bounds` with the raster extent, so
+ * every sample lands on a raster pixel regardless of how much of the viewport
+ * the raster covers.
+ */
+export interface RasterWindowReading {
+  /**
+   * Row-major samples, one per grid cell (`width * height` entries). NoData
+   * pixels keep their sentinel value; compare against `nodata` to exclude
+   * them. Cells whose tile could not be read are `NaN`. Empty when `bounds`
+   * does not intersect the raster.
+   */
+  values: number[];
+  width: number;
+  height: number;
+  band: number;
+  nodata: number | null;
+  /** Index into `[tiff, ...tiff.overviews]` of the sampled resolution level. */
+  overviewLevel: number;
+}
+
 /**
  * Options for {@link AddRasterOptions} consumers (RasterControl.addRaster).
  */

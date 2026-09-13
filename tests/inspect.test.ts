@@ -5,7 +5,7 @@ import type {
   RasterArray,
   RasterTypedArray,
 } from '@developmentseed/geotiff';
-import { readPixelValues } from '../src/lib/raster/inspect';
+import { readPixelValues, readRasterWindow } from '../src/lib/raster/inspect';
 
 /**
  * Build a fake band-separate RasterArray where band `b` (0-based) at local
@@ -88,6 +88,9 @@ function makeFakeTiff(opts: FakeTiffOptions = {}) {
   const tile = opts.tile ?? makeBandSeparateTile(count, tileWidth, tileHeight);
   const fetchTile =
     opts.fetchTile ?? vi.fn(async () => ({ array: tile }));
+  const fetchTiles = vi.fn(async (xy: Array<[number, number]>) =>
+    xy.map(() => ({ array: tile })),
+  );
   const tiff = {
     crs: opts.crs ?? 4326,
     transform,
@@ -97,9 +100,11 @@ function makeFakeTiff(opts: FakeTiffOptions = {}) {
     tileHeight,
     count,
     nodata: tile.nodata,
+    overviews: [],
     fetchTile,
+    fetchTiles,
   } as unknown as GeoTIFF;
-  return { tiff, fetchTile };
+  return { tiff, fetchTile, fetchTiles };
 }
 
 describe('readPixelValues', () => {
@@ -214,5 +219,65 @@ describe('readPixelValues', () => {
     expect(reading!.col).toBe(expectedCol);
     expect(reading!.row).toBe(expectedRow);
     expect(fetchTile).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('readRasterWindow', () => {
+  // Full raster extent, 2x2 grid: sample centers land on pixels (2,2), (7,2),
+  // (2,7), (7,7) -> local tile indices 10, 11, 14, 15.
+  const fullBounds: [number, number, number, number] = [0, 40, 10, 50];
+
+  it('returns one value per grid cell and preserves NoData samples', async () => {
+    const tile = makeBandSeparateTile(3, 4, 4, 11);
+    const { tiff } = makeFakeTiff({ tile });
+    const reading = await readRasterWindow(tiff, {
+      bounds: fullBounds,
+      width: 2,
+      height: 2,
+    });
+
+    expect(reading.values).toEqual([10, 11, 14, 15]);
+    expect(reading.values).toHaveLength(reading.width * reading.height);
+    expect(reading.nodata).toBe(11);
+    expect(reading.band).toBe(1);
+    expect(reading.overviewLevel).toBe(0);
+  });
+
+  it('samples the requested band', async () => {
+    const { tiff } = makeFakeTiff();
+    const reading = await readRasterWindow(tiff, {
+      bounds: fullBounds,
+      width: 2,
+      height: 2,
+      band: 3,
+    });
+    expect(reading.values).toEqual([2010, 2011, 2014, 2015]);
+  });
+
+  it('returns an empty reading without fetching when the viewport misses the raster', async () => {
+    const { tiff, fetchTiles } = makeFakeTiff();
+    const reading = await readRasterWindow(tiff, {
+      bounds: [20, 40, 30, 50],
+      width: 4,
+      height: 4,
+    });
+    expect(reading.values).toEqual([]);
+    expect(fetchTiles).not.toHaveBeenCalled();
+  });
+
+  it('rejects a band above the raster band count', async () => {
+    const { tiff } = makeFakeTiff({ count: 3 });
+    await expect(
+      readRasterWindow(tiff, { bounds: fullBounds, band: 4 }),
+    ).rejects.toThrow(RangeError);
+  });
+
+  it('rejects non-finite or excessive output dimensions', async () => {
+    const { tiff } = makeFakeTiff();
+    for (const width of [NaN, Infinity, 1, 5000]) {
+      await expect(
+        readRasterWindow(tiff, { bounds: fullBounds, width }),
+      ).rejects.toThrow(RangeError);
+    }
   });
 });

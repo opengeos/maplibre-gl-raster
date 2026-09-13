@@ -67,7 +67,7 @@ export {
   NORMALIZED_DIFFERENCE_INDICES,
 } from './lib/raster/indices';
 export type { NormalizedDifferenceIndex } from './lib/raster/indices';
-export { readPixelValues } from './lib/raster/inspect';
+export { readPixelValues, readRasterWindow } from './lib/raster/inspect';
 export { createResilientEpsgResolver } from './lib/raster/epsg-resolver';
 export { summarizeGeoTIFF } from './lib/raster/metadata';
 export {
@@ -106,6 +106,8 @@ export type {
   RasterLayerInfo,
   RasterLayerSource,
   RasterLayerState,
+  RasterWindowOptions,
+  RasterWindowReading,
   RasterMode,
   RasterNodata,
   RasterStretch,
