@@ -237,3 +237,49 @@ describe('RasterControl pixel inspector wiring', () => {
     ).resolves.toBeNull();
   });
 });
+
+describe('RasterControl corner detection', () => {
+  const corners = [
+    'top-left',
+    'top-right',
+    'bottom-left',
+    'bottom-right',
+  ] as const;
+
+  // Both engines dock a control in a corner div, but name it with their own
+  // prefix. Reading only the MapLibre class would fall back to top-right on
+  // mapbox-gl and drop the panel on top of whatever else sits there.
+  for (const engine of ['maplibregl', 'mapboxgl']) {
+    for (const corner of corners) {
+      it(`reads the ${engine}-ctrl-${corner} corner`, () => {
+        const parent = document.createElement('div');
+        parent.className = `${engine}-ctrl-${corner}`;
+        const container = document.createElement('div');
+        parent.appendChild(container);
+
+        const control = Object.assign(Object.create(RasterControl.prototype), {
+          _container: container,
+        }) as { _getControlPosition: () => string };
+
+        expect(control._getControlPosition()).toBe(corner);
+      });
+    }
+  }
+
+  it('falls back to top-right without a recognised corner', () => {
+    const parent = document.createElement('div');
+    parent.className = 'some-other-ctrl-bottom-left';
+    const container = document.createElement('div');
+    parent.appendChild(container);
+
+    const detached = Object.assign(Object.create(RasterControl.prototype), {
+      _container: document.createElement('div'),
+    }) as { _getControlPosition: () => string };
+    const unknown = Object.assign(Object.create(RasterControl.prototype), {
+      _container: container,
+    }) as { _getControlPosition: () => string };
+
+    expect(detached._getControlPosition()).toBe('top-right');
+    expect(unknown._getControlPosition()).toBe('top-right');
+  });
+});

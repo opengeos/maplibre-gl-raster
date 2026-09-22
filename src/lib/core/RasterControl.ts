@@ -47,6 +47,14 @@ const PANEL_MIN_HEIGHT = 180;
 /** Breathing room kept between a resized panel and the map edges. */
 const PANEL_EDGE_MARGIN = 12;
 
+/** Corners a control can be docked in, as both engines name them. */
+const CONTROL_CORNERS = [
+  'top-left',
+  'top-right',
+  'bottom-left',
+  'bottom-right',
+] as const;
+
 /**
  * Event handlers map type
  */
@@ -920,6 +928,11 @@ export class RasterControl implements IControl {
   /**
    * Detect which corner the control is positioned in.
    *
+   * Both class prefixes are recognised: a control added to a mapbox-gl map
+   * lands in a `mapboxgl-ctrl-*` corner rather than a `maplibregl-ctrl-*` one,
+   * and reading only the MapLibre class would anchor the panel to the default
+   * top-right — on top of whatever else sits in that corner.
+   *
    * @returns The position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
    */
   private _getControlPosition():
@@ -930,16 +943,13 @@ export class RasterControl implements IControl {
     const parent = this._container?.parentElement;
     if (!parent) return 'top-right'; // Default
 
-    if (parent.classList.contains('maplibregl-ctrl-top-left'))
-      return 'top-left';
-    if (parent.classList.contains('maplibregl-ctrl-top-right'))
-      return 'top-right';
-    if (parent.classList.contains('maplibregl-ctrl-bottom-left'))
-      return 'bottom-left';
-    if (parent.classList.contains('maplibregl-ctrl-bottom-right'))
-      return 'bottom-right';
+    const corner = CONTROL_CORNERS.find(
+      (name) =>
+        parent.classList.contains(`maplibregl-ctrl-${name}`) ||
+        parent.classList.contains(`mapboxgl-ctrl-${name}`),
+    );
 
-    return 'top-right'; // Default
+    return corner ?? 'top-right'; // Default
   }
 
   /**
