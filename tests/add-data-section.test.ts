@@ -260,7 +260,7 @@ describe('AddDataSection sample dropdown', () => {
     expect(sampleIndex).toBeGreaterThan(attributionIndex);
   });
 
-  it('fills the URL input, enables Load, and loads when an option is picked', () => {
+  it('fills the URL input and enables Load without loading when an option is picked', () => {
     const { section, onAddUrl } = createSection({
       sampleData: [
         { label: 'Land cover', url: 'https://example.com/landcover.tif' },
@@ -277,17 +277,21 @@ describe('AddDataSection sample dropdown', () => {
     )!;
     expect(input.value).toBe('https://example.com/landcover.tif');
     expect(loadBtn.disabled).toBe(false);
+    // Picking a sample only stages it; loading waits for the Load button.
+    expect(onAddUrl).not.toHaveBeenCalled();
+    expect(
+      section.el.querySelector<HTMLElement>('.mlr-sample-menu')!.hidden,
+    ).toBe(true);
+
+    loadBtn.click();
     expect(onAddUrl).toHaveBeenCalledWith(
       'https://example.com/landcover.tif',
       undefined,
       undefined,
     );
-    expect(
-      section.el.querySelector<HTMLElement>('.mlr-sample-menu')!.hidden,
-    ).toBe(true);
   });
 
-  it("fills the attribution input from the sample and passes it through, leaving it untouched for samples without one", () => {
+  it("fills the attribution input from the sample and passes it through on Load, leaving it untouched for samples without one", () => {
     const { section, onAddUrl } = createSection({
       sampleData: [
         {
@@ -301,6 +305,9 @@ describe('AddDataSection sample dropdown', () => {
     const attribution = section.el.querySelector<HTMLInputElement>(
       'input[aria-label=attribution]',
     )!;
+    const loadBtn = section.el.querySelector<HTMLButtonElement>(
+      'button[aria-label=load-url]',
+    )!;
     const trigger = section.el.querySelector<HTMLButtonElement>(
       '.mlr-sample-trigger',
     )!;
@@ -310,6 +317,7 @@ describe('AddDataSection sample dropdown', () => {
     trigger.click();
     options[0].click();
     expect(attribution.value).toBe('U.S. Geological Survey (USGS)');
+    loadBtn.click();
     expect(onAddUrl).toHaveBeenLastCalledWith(
       'https://example.com/landcover.tif',
       undefined,
@@ -321,6 +329,7 @@ describe('AddDataSection sample dropdown', () => {
     trigger.click();
     options[1].click();
     expect(attribution.value).toBe('© custom');
+    loadBtn.click();
     expect(onAddUrl).toHaveBeenLastCalledWith(
       'https://example.com/dem.tif',
       undefined,

@@ -308,8 +308,8 @@ export interface RasterControlOptions {
   autoLoad?: boolean;
 
   /**
-   * Sample datasets offered as a one-click "Load sample data" dropdown above
-   * the Add data URL input. Picking one fills the input (the user still clicks
+   * Sample datasets offered as a "Load sample data" dropdown below the Add
+   * data inputs. Picking one fills the URL input (the user still clicks
    * Load). Omit or leave empty to hide the dropdown, so the input stays clean
    * for the user's own URLs instead of a prefilled sample.
    */

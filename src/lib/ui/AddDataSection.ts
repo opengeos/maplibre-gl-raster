@@ -5,8 +5,8 @@ export type AddDataSectionOptions = {
   /** Prefills the URL input. */
   initialUrl?: string;
   /** Sample datasets offered as a "Load sample data" dropdown below the direct
-   * URL/file inputs; picking one loads it immediately. Omit/empty to hide the
-   * dropdown. */
+   * URL/file inputs; picking one fills the URL input, which the user then
+   * loads with the Load button. Omit/empty to hide the dropdown. */
   sampleData?: RasterSampleDataset[];
   /** Placeholder for the sample-data dropdown. */
   sampleDataLabel?: string;
@@ -157,12 +157,14 @@ export class AddDataSection {
         option.addEventListener('click', () => {
           setMenuOpen(false);
           trigger.focus();
+          // Fill the inputs only: loading stays behind the explicit Load
+          // button, the way picking a sample behaves in the sibling vector
+          // panel. Filling (rather than just passing) the sample's
+          // attribution also lets the user see and edit what will be
+          // credited before loading.
           input.value = sample.url;
-          // Fill (don't just pass) the sample's attribution so the user sees
-          // what will be credited and can edit it before a re-load.
           if (sample.attribution) attributionInput.value = sample.attribution;
           loadBtn.disabled = input.value.trim().length === 0;
-          submitUrl();
         });
         menu.appendChild(option);
       }
