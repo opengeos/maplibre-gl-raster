@@ -1,5 +1,5 @@
 import { SourceCache, SourceChunk } from '@chunkd/middleware';
-import { SourceView } from '@chunkd/source';
+import { SourceError, SourceView } from '@chunkd/source';
 import { SourceHttp } from '@chunkd/source-http';
 import { GeoTIFF } from '@developmentseed/geotiff';
 import { repairUserDefinedProjectedCrs } from './repair-geokeys';
@@ -11,7 +11,7 @@ import { repairUserDefinedProjectedCrs } from './repair-geokeys';
  * shows up as multi-hundred-millisecond "Stalled" time per chunk in the
  * Network panel — frequently *longer* than the actual network round-trip.
  *
- * `cache: "no-store"` skips both reads and writes against that machinery.
+ * `cache: 'no-store'` skips both reads and writes against that machinery.
  * We don't lose anything: the @chunkd `SourceCache` middleware caches
  * header chunks in memory, deck.gl's tile cache holds decoded tile data
  * in JS heap, so the browser's disk cache was only ever helping on full
@@ -57,14 +57,27 @@ SourceHttp.fetch = (url, opts) =>
  * Remove this once @developmentseed/geotiff (or @chunkd/source-http) lands a
  * fix for the underlying behavior.
  */
-class CorsSafeSourceHttp extends SourceHttp {
+export class CorsSafeSourceHttp extends SourceHttp {
   async fetch(
     offset: number,
     length?: number,
     options?: { signal: AbortSignal },
   ): Promise<ArrayBuffer> {
     const wasMetadata = this.metadata;
-    const result = await super.fetch(offset, length, options);
+    let result: ArrayBuffer;
+    try {
+      result = await super.fetch(offset, length, options);
+    } catch (error) {
+      // With `metadata.size` cleared (see above), the chunk middleware cannot
+      // stop at the end of the file, so a read that runs to the end asks for
+      // a whole 32 KiB chunk that can *start* past it. A plain GeoTIFF, which
+      // GDAL writes with its directory after the pixel data, hits this on its
+      // very first header read. The server answers 416 Range Not Satisfiable,
+      // which only ever means "nothing there": return no bytes, and let the
+      // middleware zero-fill the chunk like any short read at the end.
+      if (isRangeNotSatisfiable(error)) return new ArrayBuffer(0);
+      throw error;
+    }
     if (
       wasMetadata == null &&
       this.metadata != null &&
@@ -77,6 +90,11 @@ class CorsSafeSourceHttp extends SourceHttp {
     }
     return result;
   }
+}
+
+/** Whether a fetch failed because its range started at or past end of file. */
+function isRangeNotSatisfiable(error: unknown): boolean {
+  return SourceError.is(error) && error.code === 416;
 }
 
 // Match @developmentseed/geotiff's `GeoTIFF.fromUrl` defaults so we don't
