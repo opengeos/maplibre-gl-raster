@@ -187,6 +187,16 @@ describe('LayerManager deck.gl mosaic', () => {
     ).resolves.toBeNull();
   });
 
+  it('keeps each mosaic asset out of the depth buffer', async () => {
+    const { manager, setProps } = makeHarness();
+    await manager.addRaster('https://example.com/mosaic.json');
+    const props = lastLayers(setProps as ReturnType<typeof vi.fn>)[0].props as unknown as {
+      renderSource: (source: unknown, opts: { data: GeoTIFF }) => { props: { parameters?: unknown } };
+    };
+    const child = props.renderSource({ url: 'https://x.com/a.tif' }, { data: makeFakeTiff() });
+    expect(child.props.parameters).toEqual({ depthWriteEnabled: false });
+  });
+
   it('hides the mosaic from the overlay when the layer is not visible', async () => {
     const { manager, setProps } = makeHarness();
     const id = await manager.addRaster('https://example.com/mosaic.json');

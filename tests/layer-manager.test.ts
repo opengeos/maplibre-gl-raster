@@ -169,6 +169,13 @@ describe('LayerManager.addRaster', () => {
     expect(manager.getLayer(b)!.beforeId).toBeNull();
   });
 
+  it('keeps rasters out of the depth buffer so draw order decides stacking', async () => {
+    const { manager, setProps } = makeHarness();
+    await manager.addRaster('https://example.com/a.tif');
+    const layers = setProps.mock.calls.at(-1)![0].layers;
+    expect(layers[0].props.parameters).toEqual({ depthWriteEnabled: false });
+  });
+
   it('updates a raster beforeId and rebuilds with the resolved id', async () => {
     const { manager, setProps } = makeHarness();
     const id = await manager.addRaster('https://example.com/a.tif');
