@@ -102,6 +102,14 @@ export const MAX_VRT_MEMBERS = 32;
  * caller-supplied id may contain it, so only the *last* occurrence marks the
  * suffix these helpers added. */
 const MEMBER_ID_SEPARATOR = "::m";
+/**
+ * Keeps rasters out of the depth buffer. Every raster is a flat mesh at z=0, but
+ * each grid tessellates differently, so interpolated depth differs by tiny
+ * amounts between two rasters and the less-equal test deck.gl uses when
+ * interleaved would let the lower raster win in patches. Without depth writes
+ * the draw order decides, while 3D content can still occlude a raster.
+ */
+const RASTER_DEPTH_PARAMETERS = { depthWriteEnabled: false } as const;
 
 /** Strips the member suffix added by {@link memberLayerId}, yielding the id of
  * the owning RasterLayer. */
@@ -1585,6 +1593,7 @@ export class LayerManager {
           id: `${layer.id}::mosaic::${source.url}${bandTag}`,
           geotiff: opts.data,
           opacity: layer.state.opacity,
+          parameters: RASTER_DEPTH_PARAMETERS,
           getTileData,
           renderTile,
           epsgResolver: this._deps.epsgResolver,
@@ -1632,6 +1641,7 @@ export class LayerManager {
         : cogLayerId(layer, fetchBands),
       geotiff: member ? member.member.geotiff : layer.geotiff!,
       opacity: layer.state.opacity,
+      parameters: RASTER_DEPTH_PARAMETERS,
       getTileData,
       renderTile,
       beforeId: this._resolveBeforeId(layer.beforeId),
