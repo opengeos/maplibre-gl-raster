@@ -131,6 +131,16 @@ describe('LayerManager.addRaster with a VRT', () => {
     expect(new Set(layers.map((l) => l.id)).size).toBe(2);
   });
 
+  it('keeps each member out of the depth buffer', async () => {
+    const { manager, setProps } = makeHarness();
+    await manager.addRaster(VRT_URL);
+    const layers = lastLayers(setProps) as unknown as { props: { parameters?: unknown } }[];
+    expect(layers.map((l) => l.props.parameters)).toEqual([
+      { depthWriteEnabled: false },
+      { depthWriteEnabled: false },
+    ]);
+  });
+
   it('presents the mosaic as a single layer in the public surface', async () => {
     const { manager } = makeHarness();
     const id = await manager.addRaster(VRT_URL);
