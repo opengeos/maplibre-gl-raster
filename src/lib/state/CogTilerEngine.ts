@@ -13,6 +13,40 @@ import { autoRangeFor, statsForBand } from "../raster/render-pipeline";
 import type { AutoStats } from "../raster/stats";
 import { PALETTE_COLORMAP } from "../ui/ColormapPicker";
 
+/**
+ * MapLibre's internal "style JSON applied" flag for the map's current style:
+ * `Style._loaded` flips true as soon as the style is parsed, which is exactly
+ * when `addSource`/`addLayer` become safe. Undefined when the flag is absent
+ * (it is internal, so a MapLibre build may not expose it).
+ *
+ * @param map - The MapLibre map.
+ * @returns The flag, or undefined when the map does not expose it.
+ */
+function styleParsedFlag(map: MapLibreMap): boolean | undefined {
+  const loaded = (map as unknown as { style?: { _loaded?: unknown } }).style?._loaded;
+  return typeof loaded === "boolean" ? loaded : undefined;
+}
+
+/**
+ * Whether the map's current style accepts `addSource`/`addLayer`.
+ *
+ * `isStyleLoaded()` is stricter: it also waits for every source's tiles and the
+ * sprite, so it stays false for a while after `style.load` and can dip false
+ * again whenever a source reloads. A `style.load` event is trusted unless the
+ * current style is known to be unparsed, which happens when an earlier
+ * `style.load` listener already started another replacement.
+ *
+ * @param map - The MapLibre map.
+ * @param eventType - The map event being handled, if any.
+ * @returns True when custom sources and layers can be added.
+ */
+function styleAcceptsLayers(map: MapLibreMap, eventType?: string): boolean {
+  if (map.isStyleLoaded()) return true;
+  const parsed = styleParsedFlag(map);
+  if (parsed !== undefined) return parsed;
+  return eventType === "style.load";
+}
+
 /** The lazily-imported `cog-tiler-wasm` module surface the engine relies on. */
 export type CogTilerModule = typeof import("cog-tiler-wasm");
 
@@ -286,7 +320,7 @@ export class CogTilerEngine {
   private _applied = new Map<string, string>();
   /** Monotonic tile-URL version per layer, bumped to refetch on settings edits. */
   private _versions = new Map<string, number>();
-  private _onStyleReady: (() => void) | null = null;
+  private _onStyleReady: ((event?: { type?: string }) => void) | null = null;
   private _onStyleLoading: (() => void) | null = null;
   /** Latches true once the style has loaded. After that, `isStyleLoaded()` may
    * dip false again while sources load - which must NOT re-gate later syncs, or
@@ -368,8 +402,14 @@ export class CogTilerEngine {
     // need to be reconciled back onto the map. The handler is idempotent:
     // ordinary styledata events simply run the same existence checks below.
     if (!this._onStyleReady) {
-      this._onStyleReady = () => {
-        if (this._destroyed || !this._map.isStyleLoaded()) return;
+      this._onStyleReady = (event?: { type?: string }) => {
+        if (this._destroyed) return;
+        // style.load means the replacement style is parsed and accepts
+        // addSource/addLayer, even though isStyleLoaded() is still false while
+        // the basemap's own sources and sprite load. Requiring isStyleLoaded()
+        // here stranded every raster added during a setStyle() swap (opening a
+        // project with a different basemap): no later styledata re-ran it.
+        if (!styleAcceptsLayers(this._map, event?.type)) return;
         this._styleReady = true;
         this._apply();
       };
@@ -423,7 +463,7 @@ export class CogTilerEngine {
     // never add its layers at all. 'styledata' fires on every style load, so
     // re-checking isStyleLoaded() on each one latches as soon as it settles.
     if (!this._styleReady) {
-      if (this._map.isStyleLoaded()) {
+      if (styleAcceptsLayers(this._map)) {
         this._styleReady = true;
       } else {
         return;
