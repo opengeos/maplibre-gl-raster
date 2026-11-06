@@ -316,14 +316,23 @@ describe('CogTilerEngine.sync', () => {
     // style (Style._loaded) accepts mutations, so styledata must release it.
     const { map, raw, fire } = makeFakeMap({ styleLoaded: false });
     const fake = makeFakeModule();
+    const onBounds = vi.fn();
     const engine = new CogTilerEngine(map, {
       loadModule: async () => fake.module,
-      onBounds: vi.fn(),
+      onBounds,
       onError: vi.fn(),
     });
 
     engine.sync([layer()]);
-    await vi.waitFor(() => expect(fake.openCog).toHaveBeenCalled());
+    await vi.waitFor(() => expect(onBounds).toHaveBeenCalled());
+    expect(raw.addLayer).not.toHaveBeenCalled();
+
+    // An unparsed style stays gated, on styledata and on a style.load left
+    // over from a replacement that another listener already superseded.
+    (raw as unknown as { style: { _loaded: boolean } }).style = { _loaded: false };
+    fire('styledata');
+    fire('style.load');
+    expect(raw.addSource).not.toHaveBeenCalled();
     expect(raw.addLayer).not.toHaveBeenCalled();
 
     (raw as unknown as { style: { _loaded: boolean } }).style = { _loaded: true };

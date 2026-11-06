@@ -14,22 +14,37 @@ import type { AutoStats } from "../raster/stats";
 import { PALETTE_COLORMAP } from "../ui/ColormapPicker";
 
 /**
- * Whether the map's current style is parsed far enough to accept
- * `addSource`/`addLayer`.
+ * MapLibre's internal "style JSON applied" flag for the map's current style:
+ * `Style._loaded` flips true as soon as the style is parsed, which is exactly
+ * when `addSource`/`addLayer` become safe. Undefined when the flag is absent
+ * (it is internal, so a MapLibre build may not expose it).
+ *
+ * @param map - The MapLibre map.
+ * @returns The flag, or undefined when the map does not expose it.
+ */
+function styleParsedFlag(map: MapLibreMap): boolean | undefined {
+  const loaded = (map as unknown as { style?: { _loaded?: unknown } }).style?._loaded;
+  return typeof loaded === "boolean" ? loaded : undefined;
+}
+
+/**
+ * Whether the map's current style accepts `addSource`/`addLayer`.
  *
  * `isStyleLoaded()` is stricter: it also waits for every source's tiles and the
  * sprite, so it stays false for a while after `style.load` and can dip false
- * again whenever a source reloads. MapLibre's `Style._loaded` flips true as
- * soon as the style JSON is applied, which is exactly when mutations become
- * safe. It is internal, so fall back to `isStyleLoaded()` when it is absent.
+ * again whenever a source reloads. A `style.load` event is trusted unless the
+ * current style is known to be unparsed, which happens when an earlier
+ * `style.load` listener already started another replacement.
  *
  * @param map - The MapLibre map.
+ * @param eventType - The map event being handled, if any.
  * @returns True when custom sources and layers can be added.
  */
-function styleAcceptsLayers(map: MapLibreMap): boolean {
+function styleAcceptsLayers(map: MapLibreMap, eventType?: string): boolean {
   if (map.isStyleLoaded()) return true;
-  const style = (map as unknown as { style?: { _loaded?: unknown } }).style;
-  return style?._loaded === true;
+  const parsed = styleParsedFlag(map);
+  if (parsed !== undefined) return parsed;
+  return eventType === "style.load";
 }
 
 /** The lazily-imported `cog-tiler-wasm` module surface the engine relies on. */
@@ -394,7 +409,7 @@ export class CogTilerEngine {
         // the basemap's own sources and sprite load. Requiring isStyleLoaded()
         // here stranded every raster added during a setStyle() swap (opening a
         // project with a different basemap): no later styledata re-ran it.
-        if (event?.type !== "style.load" && !styleAcceptsLayers(this._map)) return;
+        if (!styleAcceptsLayers(this._map, event?.type)) return;
         this._styleReady = true;
         this._apply();
       };
