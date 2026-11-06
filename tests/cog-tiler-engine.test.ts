@@ -15,26 +15,28 @@ function makeFakeMap(options?: {
 }) {
   const sources = new Map<string, unknown>();
   const layers = new Map<string, unknown>();
-  const handlers = new Map<string, Set<() => void>>();
+  const handlers = new Map<string, Set<(event?: { type: string }) => void>>();
   // Tracked separately so `once` behaves like MapLibre's: fired at most once,
   // then dropped. A shared set would let a second fire() re-invoke it and hide
   // exactly the one-shot semantics these tests are about.
-  const onceHandlers = new Map<string, Set<() => void>>();
+  const onceHandlers = new Map<string, Set<(event?: { type: string }) => void>>();
   let styleLoaded = options?.styleLoaded ?? true;
   const addHandler = (
-    registry: Map<string, Set<() => void>>,
+    registry: Map<string, Set<(event?: { type: string }) => void>>,
     type: string,
-    handler: () => void,
+    handler: (event?: { type: string }) => void,
   ) => {
-    const set = registry.get(type) ?? new Set<() => void>();
+    const set = registry.get(type) ?? new Set<(event?: { type: string }) => void>();
     set.add(handler);
     registry.set(type, set);
   };
+  // MapLibre hands each listener an event object carrying its type.
   const emit = (type: string) => {
-    for (const handler of [...(handlers.get(type) ?? [])]) handler();
+    const event = { type };
+    for (const handler of [...(handlers.get(type) ?? [])]) handler(event);
     const pending = [...(onceHandlers.get(type) ?? [])];
     onceHandlers.get(type)?.clear();
-    for (const handler of pending) handler();
+    for (const handler of pending) handler(event);
   };
   const map = {
     isStyleLoaded: () => styleLoaded,
@@ -281,6 +283,54 @@ describe('CogTilerEngine.sync', () => {
     engine.destroy();
     expect(listenerCount('styledata')).toBe(0);
     expect(listenerCount('style.load')).toBe(0);
+  });
+
+  it('adds its layers on style.load while the new basemap sources still load', async () => {
+    // Real MapLibre fires style.load as soon as the style JSON is applied,
+    // while isStyleLoaded() stays false until the basemap's own tiles and
+    // sprite arrive. A raster synced during that setStyle() swap (opening a
+    // project with a different basemap) must still be added.
+    const { map, raw, fire, beginStyleLoad } = makeFakeMap();
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalledTimes(1));
+
+    beginStyleLoad();
+    engine.sync([layer({ id: 'b' })]);
+    expect(map.isStyleLoaded()).toBe(false);
+    fire('style.load');
+
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalledTimes(2));
+    expect(map.isStyleLoaded()).toBe(false);
+    engine.destroy();
+  });
+
+  it('treats a parsed style as ready even while its sources load', async () => {
+    // The engine may first sync after style.load already fired; a parsed
+    // style (Style._loaded) accepts mutations, so styledata must release it.
+    const { map, raw, fire } = makeFakeMap({ styleLoaded: false });
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([layer()]);
+    await vi.waitFor(() => expect(fake.openCog).toHaveBeenCalled());
+    expect(raw.addLayer).not.toHaveBeenCalled();
+
+    (raw as unknown as { style: { _loaded: boolean } }).style = { _loaded: true };
+    fire('styledata');
+
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
+    engine.destroy();
   });
 
   it('re-adds its native source and layer after the map style is replaced', async () => {
