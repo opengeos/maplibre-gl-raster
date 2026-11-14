@@ -148,6 +148,53 @@ afterEach(() => {
 });
 
 describe('CogTilerEngine.sync', () => {
+  // Regression: MapLibre's moveLayer marks the style changed even when the
+  // layer is already in place, so the next frame fires styledata. The engine
+  // re-applies on every styledata (to restore layers after setStyle), and its
+  // unconditional reorder re-armed that event: a styledata per frame forever,
+  // keeping map.loaded() false (GeoLibre's print layout timed out on it).
+  it('does not re-arm styledata by moving layers that are already in order', async () => {
+    const { map, raw, fire, layers } = makeFakeMap();
+    const order = ['basemap'];
+    let pendingStyleData = false;
+    raw.addLayer.mockImplementation((def: { id: string }, before?: string) => {
+      layers.set(def.id, def);
+      const index = before ? order.indexOf(before) : -1;
+      order.splice(index === -1 ? order.length : index, 0, def.id);
+    });
+    raw.moveLayer.mockImplementation((id: string, before?: string) => {
+      order.splice(order.indexOf(id), 1);
+      const index = before ? order.indexOf(before) : order.length;
+      order.splice(index, 0, id);
+      pendingStyleData = true;
+    });
+    (raw as Record<string, unknown>).getLayersOrder = () => [...order];
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([
+      layer({ id: 'a' }),
+      layer({ id: 'b', source: 'https://example.com/b.tif' }),
+    ]);
+    await vi.waitFor(() => expect(layers.size).toBe(2));
+    // Render frames: each pending style change fires one styledata.
+    for (let frame = 0; frame < 5 && pendingStyleData; frame++) {
+      pendingStyleData = false;
+      fire('styledata');
+    }
+
+    expect(pendingStyleData).toBe(false);
+    const moves = raw.moveLayer.mock.calls.length;
+    fire('styledata');
+    expect(raw.moveLayer.mock.calls.length).toBe(moves);
+    expect(order.slice(1)).toEqual([...layers.keys()]);
+    engine.destroy();
+  });
+
   it('resamples short renderer histograms without artificial gaps', async () => {
     const { map } = makeFakeMap();
     const counts = Array.from({ length: 10 }, (_, i) => i + 1);
