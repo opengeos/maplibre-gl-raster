@@ -9,6 +9,7 @@ import type { CogSource, RenderOptions } from "cog-tiler-wasm";
 import type { GeographicBounds, RasterLayerState } from "../core/types";
 import type { MosaicAsset } from "../raster/mosaic";
 import { resolveZoomRange } from "./RasterLayer";
+import { moveLayersIntoOrder, type LayerMove } from "./layer-order";
 import { autoRangeFor, statsForBand } from "../raster/render-pipeline";
 import type { AutoStats } from "../raster/stats";
 import { PALETTE_COLORMAP } from "../ui/ColormapPicker";
@@ -718,16 +719,15 @@ export class CogTilerEngine {
   /** Enforces the draw order (first = bottom), honoring each layer's style
    * beforeId when present. */
   private _reorder(desired: CogEngineLayer[]): void {
+    const moves: LayerMove[] = [];
     for (const layer of desired) {
       const lyrId = this._lyrId(layer.id);
       if (!this._map.getLayer(lyrId)) continue;
-      const before = this._beforeMapId(layer);
-      try {
-        this._map.moveLayer(lyrId, before);
-      } catch {
-        // Ignore transient ordering errors during style churn.
-      }
+      moves.push({ id: lyrId, before: this._beforeMapId(layer) });
     }
+    // Skipped when already in order: an in-place moveLayer still fires
+    // styledata, which re-enters _apply() and would loop every frame.
+    moveLayersIntoOrder(this._map, moves);
   }
 
   /** Opens the layer's COG (or reuses the open one), re-opening when the source

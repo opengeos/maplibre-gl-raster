@@ -1,6 +1,7 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { GeographicBounds, RasterLayerState } from '../core/types';
 import { resolveZoomRange } from './RasterLayer';
+import { moveLayersIntoOrder, type LayerMove } from './layer-order';
 import type { AutoStats } from '../raster/stats';
 import {
   buildTiTilerParams,
@@ -381,15 +382,13 @@ export class TiTilerEngine {
   /** Enforces the draw order (first = bottom), honoring each layer's style
    * beforeId when present. */
   private _reorder(desired: TiTilerEngineLayer[]): void {
+    const moves: LayerMove[] = [];
     for (const layer of desired) {
       const lyrId = this._lyrId(layer.id);
       if (!this._map.getLayer(lyrId)) continue;
-      try {
-        this._map.moveLayer(lyrId, this._beforeMapId(layer));
-      } catch {
-        // Ignore transient ordering errors during style churn.
-      }
+      moves.push({ id: lyrId, before: this._beforeMapId(layer) });
     }
+    moveLayersIntoOrder(this._map, moves);
   }
 
   /** Removes a layer's MapLibre layer + source and its applied bookkeeping. */
