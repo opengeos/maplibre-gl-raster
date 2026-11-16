@@ -817,9 +817,12 @@ export class CogTilerEngine {
         opts.rescale = ranges;
       }
     }
-    // A numeric override maps directly; 'auto' uses the COG's declared nodata
-    // (omit) and 'off' has no cog-tiler equivalent, so it is omitted too.
+    // A numeric override maps directly and 'auto' uses the COG's declared
+    // nodata (omit). 'off' passes NaN: cog-tiler takes any non-null `nodata`
+    // over the file's own, and treats NaN as "no nodata value", so every pixel
+    // renders. Omitting it instead would leave the declared value masking.
     if (typeof s.nodata === "number") opts.nodata = s.nodata;
+    else if (s.nodata === "off") opts.nodata = Number.NaN;
     return opts;
   }
 

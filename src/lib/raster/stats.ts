@@ -5,6 +5,9 @@ import type {
   RasterArray,
 } from '@developmentseed/geotiff';
 
+/** Band descriptions that mean "none" rather than naming the band. */
+const PLACEHOLDER_BAND_NAMES = new Set(['*']);
+
 /**
  * Parse band descriptions from the GDAL_METADATA XML tag. Looks for
  * `<Item name="DESCRIPTION" sample="N">name</Item>` (and a few common
@@ -22,7 +25,10 @@ export function readBandNames(tiff: GeoTIFF): Map<number, string> | null {
     if (sample === null) continue;
     if (name !== 'DESCRIPTION' && name !== 'BAND_NAME') continue;
     const text = item.textContent?.trim() ?? '';
-    if (!text) continue;
+    // Esri tools write a literal "*" as a placeholder for "no description";
+    // showing it as the band's name reads as a glitch, so treat it like an
+    // empty description and let callers fall back to the band number.
+    if (!text || PLACEHOLDER_BAND_NAMES.has(text)) continue;
     const idx = parseInt(sample, 10) + 1;
     if (Number.isFinite(idx) && idx > 0) out.set(idx, text);
   }

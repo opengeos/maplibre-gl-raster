@@ -5,9 +5,11 @@ import {
   mergeBandStats,
   percentileFromHistogram,
   pickSampleCoords,
+  readBandNames,
   type AutoStats,
   type BandStats,
 } from '../src/lib/raster/stats';
+import type { GeoTIFF } from '@developmentseed/geotiff';
 
 describe('pickSampleCoords', () => {
   it('enumerates every tile when the grid fits under the cap', () => {
@@ -176,5 +178,33 @@ describe('mergeAutoStats', () => {
       global: null,
     });
     expect(mergeAutoStats([])).toEqual({ perBand: null, global: null });
+  });
+});
+
+describe('readBandNames', () => {
+  const tiffWith = (xml: string) =>
+    ({ image: { value: () => xml } }) as unknown as GeoTIFF;
+
+  it('reads per-band DESCRIPTION items, 1-indexed', () => {
+    const names = readBandNames(
+      tiffWith(
+        '<GDALMetadata><Item name="DESCRIPTION" sample="0" role="description">B02</Item>' +
+          '<Item name="DESCRIPTION" sample="1" role="description">B03</Item></GDALMetadata>',
+      ),
+    );
+    expect([...(names ?? [])]).toEqual([
+      [1, 'B02'],
+      [2, 'B03'],
+    ]);
+  });
+
+  it('drops the "*" placeholder Esri tools write for an undescribed band', () => {
+    const names = readBandNames(
+      tiffWith(
+        '<GDALMetadata><Item name="BandDefinitionKeyword">*</Item>' +
+          '<Item name="DESCRIPTION" sample="0">*</Item></GDALMetadata>',
+      ),
+    );
+    expect(names).toBeNull();
   });
 });

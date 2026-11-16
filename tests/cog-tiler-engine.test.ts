@@ -537,6 +537,37 @@ describe('CogTilerEngine.sync', () => {
     engine.destroy();
   });
 
+  it('passes NaN nodata for "off" so the declared nodata stops masking', async () => {
+    const addProtocol = vi.spyOn(maplibregl, 'addProtocol');
+    const { map, raw } = makeFakeMap();
+    const fake = makeFakeModule();
+    const engine = new CogTilerEngine(map, {
+      loadModule: async () => fake.module,
+      onBounds: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    engine.sync([
+      layer({
+        state: createLayerState({ mode: 'single', bands: [1], nodata: 'off' }),
+      }),
+    ]);
+    await vi.waitFor(() => expect(raw.addLayer).toHaveBeenCalled());
+
+    const [scheme, handler] = addProtocol.mock.calls.at(-1)!;
+    await handler(
+      { url: `${scheme}://a/4/3/2` } as never,
+      new AbortController(),
+    );
+
+    const options = fake.renderTilePNG.mock.calls.at(-1)![3] as {
+      nodata?: number;
+    };
+    expect(Number.isNaN(options.nodata)).toBe(true);
+
+    engine.destroy();
+  });
+
   it('can render a tile requested synchronously while addLayer runs', async () => {
     const addProtocol = vi.spyOn(maplibregl, 'addProtocol');
     let firstTile: Promise<{ data: Uint8Array }> | null = null;
