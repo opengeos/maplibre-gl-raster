@@ -16,7 +16,7 @@ export interface EngineSectionOptions {
 }
 
 const HELP =
-  'Rendering backend. "maplibre-gl-raster" uses the deck.gl GPU pipeline (default) ' +
+  'Rendering backend. "maplibre-gl-raster" uses the deck.gl GPU pipeline ' +
   'and renders a MosaicJSON or STAC mosaic client-side. "cog-tiler-wasm" renders ' +
   'tiles on the CPU with a serverless WebAssembly tiler, loaded on demand, and ' +
   'composites a MosaicJSON or STAC mosaic per tile. ' +
