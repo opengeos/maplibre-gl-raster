@@ -1,4 +1,8 @@
-import { Popup, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
+import {
+  Popup,
+  type Map as MapLibreMap,
+  type MapMouseEvent,
+} from 'maplibre-gl';
 import type { GeoTIFF } from '@developmentseed/geotiff';
 import { readPixelValues, type PixelReading } from '../raster/inspect';
 import { el } from '../ui/dom';
@@ -88,6 +92,7 @@ export class PixelInspector {
   private _enabled = false;
   private _popup: PopupLike | null;
   private _abort: AbortController | null = null;
+  private _clickFilter: ((event: MapMouseEvent) => boolean) | null = null;
 
   /**
    * @param map - The MapLibre GL map to listen on
@@ -104,6 +109,17 @@ export class PixelInspector {
     this._deps = { ...DEFAULT_DEPS, ...deps };
     // One reusable popup for the inspector's lifetime.
     this._popup = this._deps.createPopup();
+  }
+
+  /**
+   * Sets the predicate consulted before each inspect click. When it returns
+   * `false` the click is ignored entirely (no popup, no cancellation of an
+   * in-flight read). Pass `null` to inspect every click again.
+   *
+   * @param filter - The predicate, or `null` to clear it
+   */
+  setClickFilter(filter: ((event: MapMouseEvent) => boolean) | null): void {
+    this._clickFilter = filter;
   }
 
   /** Whether inspect mode is currently active. */
@@ -178,6 +194,7 @@ export class PixelInspector {
   }
 
   private _onClick = (e: MapMouseEvent): void => {
+    if (this._clickFilter && !this._clickFilter(e)) return;
     const lngLat: [number, number] = [e.lngLat.lng, e.lngLat.lat];
     // Cancel any read still in flight from a previous click.
     this._abort?.abort();
@@ -280,13 +297,14 @@ export class PixelInspector {
     // (grab / grabbing). An inline cursor on that same container overrides
     // those rules, so the crosshair sticks even while panning. Fall back to
     // the canvas element when the container getter is unavailable.
-    const target =
-      this._map.getCanvasContainer?.() ?? this._map.getCanvas?.();
+    const target = this._map.getCanvasContainer?.() ?? this._map.getCanvas?.();
     if (target) target.style.cursor = value;
   }
 
   private _messageContent(text: string): Node {
-    return el('div', { className: 'mlr-inspect-content' },
+    return el(
+      'div',
+      { className: 'mlr-inspect-content' },
       el('div', { className: 'mlr-inspect-message', text }),
     );
   }

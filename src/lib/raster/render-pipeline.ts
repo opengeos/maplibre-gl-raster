@@ -26,6 +26,7 @@ import {
   SqrtStretch,
 } from './shader-modules';
 import type { MultiBandTileData } from './tile-loader';
+import { LOG_STRETCH_STRENGTH } from './adjustment-curves';
 
 type Range = [number, number];
 type Vec3 = [number, number, number];
@@ -102,7 +103,10 @@ function effectiveRescale(
  * to 0..1, which the preceding rescale module guarantees. */
 function pushAdjustments(state: RasterLayerState, pipeline: RasterModule[]): void {
   if (state.stretch === 'log') {
-    pipeline.push({ module: LogStretch, props: { strength: 99 } });
+    pipeline.push({
+      module: LogStretch,
+      props: { strength: LOG_STRETCH_STRENGTH },
+    });
   } else if (state.stretch === 'sqrt') {
     pipeline.push({ module: SqrtStretch });
   }

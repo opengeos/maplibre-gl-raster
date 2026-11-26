@@ -1,5 +1,5 @@
 import type { EpsgResolver } from '@developmentseed/proj';
-import type { ControlPosition, Map } from 'maplibre-gl';
+import type { ControlPosition, Map, MapMouseEvent } from 'maplibre-gl';
 import type { ColorbarOrientation } from './Colorbar';
 
 /** Rendering mode: RGB composite (one band per channel), a single band
@@ -337,7 +337,25 @@ export interface RasterControlOptions {
    * network dependency entirely. Resolution failures surface as a layer error.
    */
   epsgResolver?: EpsgResolver;
+
+  /**
+   * Decides whether the pixel inspector handles a map click while inspect mode
+   * is active. Return `false` to ignore the click: no popup opens and a read
+   * still in flight from an earlier click is left alone. Use it when the host
+   * runs other click-driven map tools (measuring, drawing) that should own the
+   * click while they are active. Change it later with
+   * {@link RasterControl.setInspectorClickFilter}.
+   *
+   * @default undefined (every click is inspected)
+   */
+  inspectorClickFilter?: InspectorClickFilter;
 }
+
+/**
+ * Predicate for {@link RasterControlOptions.inspectorClickFilter}: return
+ * `true` to let the pixel inspector handle the click, `false` to ignore it.
+ */
+export type InspectorClickFilter = (event: MapMouseEvent) => boolean;
 
 /**
  * Internal state of the plugin control

@@ -185,6 +185,71 @@ describe('RasterControl pixel inspector wiring', () => {
     control.onRemove();
   });
 
+  function makeClickableMap() {
+    const map = makeFakeMap() as unknown as Record<string, unknown>;
+    const clicks: Array<(event: unknown) => void> = [];
+    map.on = (type: string, handler: (event: unknown) => void) => {
+      if (type === 'click') clicks.push(handler);
+    };
+    map.off = (type: string, handler: (event: unknown) => void) => {
+      if (type !== 'click') return;
+      const index = clicks.indexOf(handler);
+      if (index >= 0) clicks.splice(index, 1);
+    };
+    return {
+      map: map as unknown as MapLibreMap,
+      click: (event: unknown) => [...clicks].forEach((h) => h(event)),
+    };
+  }
+
+  it('consults the inspectorClickFilter option before inspecting a click', () => {
+    const filter = vi.fn().mockReturnValue(false);
+    const control = new RasterControl({
+      collapsed: false,
+      inspectorClickFilter: filter,
+    });
+    const { map, click } = makeClickableMap();
+    map.getContainer().appendChild(control.onAdd(map));
+    control.setInspect(true);
+
+    const event = { lngLat: { lng: 1, lat: 2 } };
+    click(event);
+
+    expect(filter).toHaveBeenCalledWith(event);
+    control.onRemove();
+  });
+
+  it('replaces and clears the click filter through setInspectorClickFilter', () => {
+    const first = vi.fn().mockReturnValue(false);
+    const second = vi.fn().mockReturnValue(false);
+    const control = new RasterControl({ collapsed: false });
+    // Set before mount: applied once the inspector exists.
+    control.setInspectorClickFilter(first);
+    const { map, click } = makeClickableMap();
+    map.getContainer().appendChild(control.onAdd(map));
+    control.setInspect(true);
+
+    click({ lngLat: { lng: 0, lat: 0 } });
+    expect(first).toHaveBeenCalledTimes(1);
+
+    control.setInspectorClickFilter(second);
+    click({ lngLat: { lng: 0, lat: 0 } });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    // Clearing forwards null to the inspector (which then inspects every
+    // click; covered by the PixelInspector tests).
+    const inspector = (
+      control as unknown as {
+        _inspector: { setClickFilter: (f: unknown) => void };
+      }
+    )._inspector;
+    const setClickFilter = vi.spyOn(inspector, 'setClickFilter');
+    control.setInspectorClickFilter(null);
+    expect(setClickFilter).toHaveBeenCalledWith(null);
+    control.onRemove();
+  });
+
   it('reflects programmatic inspect toggling on the panel button', () => {
     const control = new RasterControl({ collapsed: false });
     const map = makeFakeMap();
