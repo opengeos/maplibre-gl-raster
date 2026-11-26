@@ -68,6 +68,14 @@ export {
 } from './lib/raster/indices';
 export type { NormalizedDifferenceIndex } from './lib/raster/indices';
 export { readPixelValues, readRasterWindow } from './lib/raster/inspect';
+export {
+  applyAdjustments,
+  applyStretch,
+  invertAdjustments,
+  invertStretch,
+  LOG_STRETCH_STRENGTH,
+} from './lib/raster/adjustment-curves';
+export type { RasterAdjustments } from './lib/raster/adjustment-curves';
 export { createResilientEpsgResolver } from './lib/raster/epsg-resolver';
 export { summarizeGeoTIFF } from './lib/raster/metadata';
 export {
@@ -97,6 +105,7 @@ export type {
 export type {
   AddRasterOptions,
   GeographicBounds,
+  InspectorClickFilter,
   RasterControlEvent,
   RasterControlEventData,
   RasterControlEventHandler,

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import { PixelInspector, type PopupLike } from '../src/lib/state/PixelInspector';
+import {
+  PixelInspector,
+  type PopupLike,
+} from '../src/lib/state/PixelInspector';
 import type { RasterLayer } from '../src/lib/state/RasterLayer';
 import type { PixelReading } from '../src/lib/raster/inspect';
 
@@ -103,6 +106,71 @@ describe('PixelInspector', () => {
     expect(insp.enabled).toBe(true);
     insp.toggle();
     expect(insp.enabled).toBe(false);
+  });
+
+  it('ignores clicks the click filter rejects', async () => {
+    const { map, emit } = makeFakeMap();
+    const popup = makePopup();
+    const readPixelValues = vi.fn().mockResolvedValue(reading);
+    const insp = new PixelInspector(map, () => makeTarget(), {
+      readPixelValues,
+      createPopup: () => popup,
+    });
+    const filter = vi.fn().mockReturnValue(false);
+    insp.setClickFilter(filter);
+
+    insp.enable();
+    const event = click(3.5, 47.5);
+    emit('click', event);
+    await flush();
+
+    expect(filter).toHaveBeenCalledWith(event);
+    expect(readPixelValues).not.toHaveBeenCalled();
+    expect(popup.addTo).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel an in-flight read when a later click is filtered out', async () => {
+    const { map, emit } = makeFakeMap();
+    const popup = makePopup();
+    let resolveRead: (value: PixelReading) => void = () => undefined;
+    const readPixelValues = vi.fn(
+      () => new Promise<PixelReading>((resolve) => (resolveRead = resolve)),
+    );
+    const insp = new PixelInspector(map, () => makeTarget(), {
+      readPixelValues,
+      createPopup: () => popup,
+    });
+    let claimed = false;
+    insp.setClickFilter(() => !claimed);
+
+    insp.enable();
+    emit('click', click(3.5, 47.5));
+    claimed = true;
+    emit('click', click(9, 9));
+    resolveRead(reading);
+    await flush();
+
+    expect(readPixelValues).toHaveBeenCalledTimes(1);
+    expect(popup.setLngLat).not.toHaveBeenCalledWith([9, 9]);
+    // The first read still settles into its popup.
+    expect(popup.setDOMContent).toHaveBeenCalledTimes(2);
+  });
+
+  it('inspects every click again once the filter is cleared', async () => {
+    const { map, emit } = makeFakeMap();
+    const readPixelValues = vi.fn().mockResolvedValue(reading);
+    const insp = new PixelInspector(map, () => makeTarget(), {
+      readPixelValues,
+      createPopup: makePopup,
+    });
+    insp.setClickFilter(() => false);
+    insp.setClickFilter(null);
+
+    insp.enable();
+    emit('click', click(3.5, 47.5));
+    await flush();
+
+    expect(readPixelValues).toHaveBeenCalledTimes(1);
   });
 
   it('reads the target layer and shows a popup on click', async () => {
@@ -226,7 +294,11 @@ describe('PixelInspector', () => {
 
       // Only the covering member is fetched — not every member of the mosaic.
       expect(readPixelValues).toHaveBeenCalledTimes(1);
-      expect(readPixelValues).toHaveBeenCalledWith(east, [5, 5], expect.anything());
+      expect(readPixelValues).toHaveBeenCalledWith(
+        east,
+        [5, 5],
+        expect.anything(),
+      );
     });
 
     it('falls through to the next candidate when a member misses its grid', async () => {
@@ -308,8 +380,14 @@ describe('PixelInspector', () => {
      * GeoTIFF of its own — assets are opened lazily, per viewport. */
     function makeManifestTarget(
       assets = [
-        { url: 'a.tif', bbox: [-10, 0, 0, 10] as [number, number, number, number] },
-        { url: 'b.tif', bbox: [0, 0, 10, 10] as [number, number, number, number] },
+        {
+          url: 'a.tif',
+          bbox: [-10, 0, 0, 10] as [number, number, number, number],
+        },
+        {
+          url: 'b.tif',
+          bbox: [0, 0, 10, 10] as [number, number, number, number],
+        },
       ],
     ) {
       return makeTarget({
@@ -343,7 +421,11 @@ describe('PixelInspector', () => {
       // Only the covering asset is opened, and the read goes through it.
       expect(openMosaicAsset).toHaveBeenCalledTimes(1);
       expect(openMosaicAsset).toHaveBeenCalledWith('b.tif');
-      expect(readPixelValues).toHaveBeenCalledWith(east, [5, 5], expect.anything());
+      expect(readPixelValues).toHaveBeenCalledWith(
+        east,
+        [5, 5],
+        expect.anything(),
+      );
     });
 
     it('skips an asset that cannot be opened and tries the next', async () => {

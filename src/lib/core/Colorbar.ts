@@ -1,4 +1,5 @@
 import type { ControlPosition, IControl } from 'maplibre-gl';
+import { invertStretch } from '../raster/adjustment-curves';
 import { sampleColormapStops } from '../raster/colormap-sampler';
 import { el, fmtNumber } from '../ui/dom';
 
@@ -7,9 +8,6 @@ export type ColorbarOrientation = 'horizontal' | 'vertical';
 
 /** Stretch curve the raster applies before the colormap (mirrors RasterStretch). */
 export type ColorbarStretch = 'linear' | 'log' | 'sqrt';
-
-// LogStretch's steepness `k`, matching maplibre-gl-raster's default.
-const LOG_STRENGTH = 99;
 
 /**
  * Maps a fraction along the bar back to the normalized data value it
@@ -23,11 +21,7 @@ const LOG_STRENGTH = 99;
  * @returns The normalized data value (in [0, 1]) shown at that position.
  */
 function inverseStretch(position: number, stretch: ColorbarStretch): number {
-  if (stretch === 'sqrt') return position * position;
-  if (stretch === 'log') {
-    return (Math.pow(1 + LOG_STRENGTH, position) - 1) / LOG_STRENGTH;
-  }
-  return position;
+  return invertStretch(position, stretch);
 }
 
 /**

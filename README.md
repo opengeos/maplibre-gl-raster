@@ -122,6 +122,7 @@ The main control class implementing MapLibre's `IControl` interface.
 | `closeOnOutsideClick` | `boolean` | `true` | Collapse the panel when clicking outside it; set `false` to close only via the header button |
 | `engine`      | `RenderEngine` | `'maplibre-gl-raster'` | Initial rendering backend; switchable at runtime from the panel    |
 | `titilerEndpoint` | `string` | `'https://titiler.d2s.org'` | TiTiler instance used by the `'titiler'` engine (COG + MosaicJSON) |
+| `inspectorClickFilter` | `(event: MapMouseEvent) => boolean` | - | Called before the pixel inspector handles a map click; return `false` to ignore it (no popup, an in-flight read is kept). Use it to let other click-driven map tools (measuring, drawing) own the click while they are active |
 
 #### Raster Methods
 
@@ -134,6 +135,8 @@ The main control class implementing MapLibre's `IControl` interface.
 - `zoomToRaster(id)` - Fit the map to a layer's bounds
 - `reorderRaster(id, toIndex)` - Move a layer in the draw order (0 = bottom)
 - `getEngine()` / `setEngine(engine)` - Read / switch the rendering backend (see [Rendering engines](#rendering-engines))
+- `setInspect(enabled)` / `isInspecting()` - Toggle / read pixel-inspect mode (the panel's Inspect button)
+- `setInspectorClickFilter(filter | null)` - Replace the `inspectorClickFilter` predicate at runtime (`null` inspects every click again); safe to call before the control is added
 
 `addRaster` options (`AddRasterOptions`): `id`, `name`, `state` (initial `Partial<RasterLayerState>` overrides), `zoomTo` (default `true`), and `beforeId` (insert the raster beneath an existing style layer, e.g. a label layer; also available as an input in the panel's Add data section).
 
@@ -437,6 +440,7 @@ The package also exports lower-level building blocks for advanced use:
 - `COLORMAP_NAMES` / `COLORMAP_OPTIONS` / `colormapsPngUrl`
 - `sampleColormapStops(name, steps, reversed?)` / `loadColormapSprite()` / `isKnownColormap(name)` - sample a colormap's colors in plain JS
 - `autoRangeFor(stats)` / `statsForBand(autoStats, band)` - resolve a band's effective rescale range
+- `applyAdjustments(x, { stretch, gamma })` / `invertAdjustments(t, { stretch, gamma })` - the render pipeline's post-rescale value curves (stretch, then gamma `pow(x, 1 / gamma)`) and their exact inverse, mapping a rescaled value to its colormap position and back; `applyStretch` / `invertStretch` cover the stretch alone and `LOG_STRETCH_STRENGTH` is the `'log'` stretch's steepness
 - `clamp`, `formatNumericValue`, `generateId`, `debounce`, `throttle`, `classNames`
 
 ## Mosaic VRT support

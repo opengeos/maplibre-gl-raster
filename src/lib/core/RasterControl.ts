@@ -9,6 +9,7 @@ import { type RasterLayer, toLayerInfo } from '../state/RasterLayer';
 import { PanelUI } from '../ui/PanelUI';
 import { Colorbar, type ColorbarOptions } from './Colorbar';
 import type {
+  InspectorClickFilter,
   AddRasterOptions,
   RasterControlEvent,
   RasterControlEventHandler,
@@ -24,7 +25,9 @@ import type {
 /**
  * Default options for the RasterControl
  */
-const DEFAULT_OPTIONS: Required<RasterControlOptions> = {
+const DEFAULT_OPTIONS: Required<
+  Omit<RasterControlOptions, 'inspectorClickFilter'>
+> = {
   collapsed: true,
   position: 'top-right',
   title: 'Raster',
@@ -83,7 +86,10 @@ export class RasterControl implements IControl {
   private _mapContainer?: HTMLElement;
   private _container?: HTMLElement;
   private _panel?: HTMLElement;
-  private _options: Required<RasterControlOptions>;
+  private _options: Required<
+    Omit<RasterControlOptions, 'inspectorClickFilter'>
+  >;
+  private _inspectorClickFilter: InspectorClickFilter | null;
   private _state: RasterControlState;
   private _eventHandlers: EventHandlersMap = new globalThis.Map();
   private _layerManager?: LayerManager;
@@ -108,7 +114,9 @@ export class RasterControl implements IControl {
    * @param options - Configuration options for the control
    */
   constructor(options?: Partial<RasterControlOptions>) {
-    this._options = { ...DEFAULT_OPTIONS, ...options };
+    const { inspectorClickFilter, ...rest } = options ?? {};
+    this._options = { ...DEFAULT_OPTIONS, ...rest };
+    this._inspectorClickFilter = inspectorClickFilter ?? null;
     this._state = {
       collapsed: this._options.collapsed,
       panelWidth: this._options.panelWidth,
@@ -157,6 +165,7 @@ export class RasterControl implements IControl {
       // reuses the headers the renderer already opened.
       { openMosaicAsset: (url) => manager.openMosaicAsset(url) },
     );
+    this._inspector.setClickFilter(this._inspectorClickFilter);
 
     const content = this._panel.querySelector<HTMLElement>(
       '.mlr-control-content',
@@ -436,6 +445,20 @@ export class RasterControl implements IControl {
     else this._inspector.disable();
     // Keep the panel's Inspect button in sync when toggled programmatically.
     this._panelUI?.syncInspect();
+  }
+
+  /**
+   * Replaces the predicate the pixel inspector consults before handling a map
+   * click (see {@link RasterControlOptions.inspectorClickFilter}). Return
+   * `false` from it to ignore a click, for example while another map tool has
+   * claimed it. Pass `null` to inspect every click again. Safe to call before
+   * the control is added to a map; the filter applies once it mounts.
+   *
+   * @param filter - The predicate, or `null` to clear it
+   */
+  setInspectorClickFilter(filter: InspectorClickFilter | null): void {
+    this._inspectorClickFilter = filter;
+    this._inspector?.setClickFilter(filter);
   }
 
   /**

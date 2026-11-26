@@ -1,3 +1,5 @@
+import { LOG_STRETCH_STRENGTH } from './adjustment-curves';
+
 /**
  * Custom luma.gl shader modules that fill in capabilities not shipped by
  * `@developmentseed/deck.gl-raster/gpu-modules`. They follow the same
@@ -150,6 +152,6 @@ export const LogStretch = {
     strength: 'f32',
   },
   getUniforms: (props: Partial<LogStretchProps>) => ({
-    strength: props.strength ?? 99,
+    strength: props.strength ?? LOG_STRETCH_STRENGTH,
   }),
 } as const;
