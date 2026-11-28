@@ -1,3 +1,4 @@
+import { decoderPoolFor } from './byte-order';
 import type { GetTileDataOptions } from '@developmentseed/deck.gl-geotiff';
 import type {
   GeoTIFF,
@@ -127,7 +128,11 @@ export function makeMultiBandTileLoader(bandIndexes: number[]) {
     options: GetTileDataOptions,
   ): Promise<MultiBandTileData> {
     const { device, x, y, signal } = options;
-    const tile = await image.fetchTile(x, y, { signal, boundless: false });
+    const tile = await image.fetchTile(x, y, {
+      signal,
+      boundless: false,
+      pool: decoderPoolFor(image),
+    });
     const array: RasterArray = tile.array;
     const bands = new Map<
       string,

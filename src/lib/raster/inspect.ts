@@ -6,6 +6,7 @@ import type {
 import type { RasterWindowOptions, RasterWindowReading } from '../core/types';
 import { epsgResolver, parseWkt } from '@developmentseed/proj';
 import proj4 from 'proj4';
+import { decoderPoolFor } from './byte-order';
 
 /** A single band's value at an inspected pixel. */
 export interface BandReading {
@@ -134,6 +135,7 @@ export async function readPixelValues(
   const tileY = Math.floor(row / tiff.tileHeight);
   const tile = await tiff.fetchTile(tileX, tileY, {
     signal: options?.signal,
+    pool: decoderPoolFor(tiff),
     boundless: false,
   });
   const array = tile.array;
@@ -209,7 +211,11 @@ export async function readRasterWindow(
   for (let y = tileY1; y <= tileY2; y += 1) {
     for (let x = tileX1; x <= tileX2; x += 1) coordinates.push([x, y]);
   }
-  const tiles = await selected.fetchTiles(coordinates, { signal: options.signal, boundless: false });
+  const tiles = await selected.fetchTiles(coordinates, {
+    signal: options.signal,
+    boundless: false,
+    pool: decoderPoolFor(selected),
+  });
   const tileMap = new Map(coordinates.map((coordinate, index) => [coordinate.join(","), tiles[index]]));
   const values: number[] = [];
   for (let row = 0; row < height; row += 1) {
