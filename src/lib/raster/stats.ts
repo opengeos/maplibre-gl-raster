@@ -1,4 +1,5 @@
 import { TiffTag } from '@cogeotiff/core';
+import { decoderPoolFor } from './byte-order';
 import type {
   GeoTIFF,
   Overview,
@@ -324,7 +325,11 @@ async function streamingFromTiles(
 
   for (const [x, y] of coords) {
     if (signal.aborted) return NULL_STATS;
-    const tile = await source.fetchTile(x, y, { signal, boundless: false });
+    const tile = await source.fetchTile(x, y, {
+      signal,
+      boundless: false,
+      pool: decoderPoolFor(source),
+    });
     const arr = tile.array;
 
     if (!initialized) {
@@ -376,7 +381,11 @@ async function batchFromTiles(
   const tiles: RasterArray[] = [];
   for (const [x, y] of coords) {
     if (signal.aborted) return NULL_STATS;
-    const tile = await source.fetchTile(x, y, { signal, boundless: false });
+    const tile = await source.fetchTile(x, y, {
+      signal,
+      boundless: false,
+      pool: decoderPoolFor(source),
+    });
     tiles.push(tile.array);
   }
   if (signal.aborted || tiles.length === 0) return NULL_STATS;
