@@ -89,24 +89,34 @@ function toTypedArray(buffer: ArrayBuffer, metadata: DecoderMetadata): RasterTyp
 /**
  * Undo TIFF horizontal differencing (Predictor 2) on platform-order samples.
  *
- * @param array - The tile's samples, modified in place
+ * The predictor differences whole sample words as unsigned integers, floating
+ * point samples included, so it is undone on an unsigned view of the bytes
+ * before they are read as the sample type. Unsigned typed arrays wrap the sums
+ * the way the encoder's subtraction did.
+ *
+ * @param buffer - The tile's platform-order sample bytes, modified in place
  * @param metadata - The tile's decoder metadata
  */
-function undoHorizontalPredictor(array: RasterTypedArray, metadata: DecoderMetadata): void {
-  const { width, height } = metadata;
+function undoHorizontalPredictor(buffer: ArrayBuffer, metadata: DecoderMetadata): void {
+  const { width, height, bitsPerSample } = metadata;
   // Band-separate tiles reach the decoder one band at a time.
   const stride =
     (metadata.planarConfiguration as number) === PLANAR_SEPARATE
       ? 1
       : metadata.samplesPerPixel;
   const rowLength = width * stride;
-  for (let row = 0; row < height; row++) {
-    const start = row * rowLength;
-    for (let i = start + stride; i < start + rowLength; i++) {
-      // Integer sample types wrap like the encoder's subtraction did.
-      array[i] = (array[i] as number) + (array[i - stride] as number);
+  const accumulate = <T extends number | bigint>(words: { [i: number]: T }) => {
+    for (let row = 0; row < height; row++) {
+      const start = row * rowLength;
+      for (let i = start + stride; i < start + rowLength; i++) {
+        words[i] = ((words[i] as never) + (words[i - stride] as never)) as T;
+      }
     }
-  }
+  };
+  if (bitsPerSample === 16) accumulate(new Uint16Array(buffer));
+  else if (bitsPerSample === 32) accumulate(new Uint32Array(buffer));
+  else if (bitsPerSample === 64) accumulate(new BigUint64Array(buffer));
+  else throw new Error(`Unsupported predictor sample width: ${bitsPerSample}`);
 }
 
 /**
@@ -150,11 +160,10 @@ async function decodeBigEndian(
   // may share, so swap a copy rather than the input.
   const buffer = result === bytes ? result.slice(0) : result;
   swapBytesInPlace(new Uint8Array(buffer), bytesPerSample);
-  const data = toTypedArray(buffer, metadata);
-  if ((predictor as number) === PREDICTOR_HORIZONTAL) undoHorizontalPredictor(data, metadata);
+  if ((predictor as number) === PREDICTOR_HORIZONTAL) undoHorizontalPredictor(buffer, metadata);
   else if ((predictor as number) !== PREDICTOR_NONE)
     throw new Error(`Unsupported predictor: ${predictor}`);
-  return { layout: 'pixel-interleaved', data };
+  return { layout: 'pixel-interleaved', data: toTypedArray(buffer, metadata) };
 }
 
 /** A decoder-pool stand-in that decodes big-endian tiles correctly. */

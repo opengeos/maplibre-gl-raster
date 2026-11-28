@@ -93,3 +93,14 @@ describe('byte order', () => {
     expect([...(decoded as { data: Uint8Array }).data]).toEqual([7, 9]);
   });
 });
+
+describe('byte order: floating-point samples with horizontal differencing', () => {
+  it('accumulates the integer words, not the float values', async () => {
+    const pool = decoderPoolFor(image(false))!;
+    // Float32 row [1, 2] is the words 0x3f800000, 0x40000000; Predictor 2
+    // stores the first word and the wrapped word difference 0x00800000.
+    const input = bigEndianBytes([0x3f800000, 0x00800000], (v, o, x) => v.setUint32(o, x), 4);
+    const decoded = await pool.decode(input, NONE, metadata({ predictor: 2 }));
+    expect([...(decoded as { data: Float32Array }).data]).toEqual([1, 2]);
+  });
+});
